@@ -2,6 +2,7 @@ package main
 
 import (
     "fmt"
+    "io"
     "net"
     "sync"
     "time"
@@ -9,8 +10,9 @@ import (
 
 var tcpToServerStream = make(chan TCPData, 1000)
 var tcpFromServerStream = make(chan TCPData, 1000)
+var closeConn = make(chan bool, 2)
 
-var addr = "192.168.1.2:8001"
+var addr = "127.0.0.1:8001"
 
 type TCPData struct {
     ConnId uint64
@@ -23,21 +25,31 @@ var BufPool = sync.Pool{}
 
 func main() {
     go proxyClient()
-    Client()
+    go Client()
+    select {}
 }
 
 func proxyClient() {
-    conn, err := net.Dial("tcp", ":8001")
-    if err != nil {
-        panic(err)
+    fmt.Println("safrp client ...")
+    for {
+        conn, err := net.Dial("tcp", "127.0.0.1:8002")
+        if err != nil {
+            fmt.Println(err)
+            time.Sleep(3 * time.Second)
+            continue
+        }
+        fmt.Println("connect success ...")
+        go Read(conn)
+        Send(conn)
     }
-
-    go Read(conn)
-    Send(conn)
 }
 
 // 从 内网穿透服务器 读数据
 func Read(c net.Conn) {
+    defer func() {
+        closeConn <- true
+    }()
+
     tBuf := BufPool.Get()
     buf := []byte{}
     if tBuf == nil {
@@ -45,15 +57,20 @@ func Read(c net.Conn) {
     } else {
         buf = tBuf.([]byte)
     }
+    defer func() {
+        BufPool.Put(buf)
+    }()
     for {
         err := c.SetReadDeadline(time.Now().Add(3 * time.Second))
         if err != nil {
             return
         }
         n, err := c.Read(buf)
-        fmt.Println(n, err)
         if n == 0 {
-            continue
+            if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
+                 continue
+            }
+            return
         }
         fmt.Println(string(buf[:n]))
         tcpFromServerStream <- TCPData{
@@ -71,10 +88,11 @@ func Send(c net.Conn) {
             _, err := c.Write(data.Data)
             if err != nil {
             }
+        case <- closeConn:
+            return
         }
     }
 }
-
 
 func Client() {
     for {

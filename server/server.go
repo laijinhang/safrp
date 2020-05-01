@@ -2,8 +2,12 @@ package main
 
 import (
     "fmt"
+    "log"
     "net"
+    "os"
+    "strconv"
     "sync"
+    "syscall"
     "time"
 )
 
@@ -52,14 +56,13 @@ func proxyServer() {
                 time.Sleep(50 * time.Millisecond)
             }
         }
-        fmt.Println(client, num)
+        fmt.Println(client.RemoteAddr(), num)
         go func(c net.Conn, n int) {
             defer func() {
                 ConnPool.Put(n)
                 c.Close()
             }()
-            //go ExtranetRead(c, n)
-            ExtranetRead(c, n)
+            go ExtranetRead(c, n)
             ExtranetSend(c, n)
         }(client, num)
     }
@@ -74,6 +77,9 @@ func ExtranetRead(c net.Conn, number int) {
     } else {
         buf = tBuf.([]byte)
     }
+    defer func() {
+        BufPool.Put(buf)
+    }()
 
     for {
         err := c.SetReadDeadline(time.Now().Add(3 * time.Second))
@@ -84,7 +90,6 @@ func ExtranetRead(c net.Conn, number int) {
         if err != nil {
             break
         }
-        fmt.Println("从收到外网请求")
         tcpToClientStream <- TCPData{
             ConnId: number,
             Data:   buf[:n],
@@ -118,18 +123,20 @@ func ExtranetSend(c net.Conn, number int) {
 
 // 处理穿透内网服务
 func server() {
-    listen, err := net.Listen("tcp", ":8001")
+    listen, err := net.Listen("tcp", "127.0.0.1:8002")
+    fmt.Println("safrp server listen :8002 ...")
     if err != nil {
         panic(err)
     }
     for {
         client, err := listen.Accept()
         if err != nil {
+            fmt.Println(err)
             continue
         }
+        fmt.Println("safrp client ", client.RemoteAddr(), "connect success ...")
         go func(c net.Conn) {
-            //go Send(c)
-            Send(c)
+            go Send(c)
             Read(c)
         }(client)
     }
@@ -141,17 +148,8 @@ func Send(c net.Conn) {
         select {
         case data := <- tcpToClientStream:
             fmt.Println("向内网发送数据")
-            // 转json
-            //fmt.Println(string(data.Data))
-            //buf, err := json.Marshal(data)
-            //
-            //if err != nil {
-            //    fmt.Println(err)
-            //    continue
-            //}
             err := c.SetWriteDeadline(time.Now().Add(2 * time.Second))
-            n, err := c.Write(data.Data)
-
+            n, err := c.Write(append([]byte(strconv.Itoa(data.ConnId)+"\r\n"), data.Data...))
             fmt.Println(n, err)
         }
     }
@@ -166,17 +164,57 @@ func Read(c net.Conn) {
     } else {
         buf = tBuf.([]byte)
     }
+    defer func() {
+        BufPool.Put(buf)
+    }()
 
     for {
-        err := c.SetReadDeadline(time.Now().Add(3 * time.Second))
-        if err != nil {
-            continue
-        }
         n, err := c.Read(buf)
-        fmt.Println("送内网读取数据")
+        if err != nil {
+            return
+        }
+        fmt.Println("从内网读取数据")
+        fmt.Println(string(buf[:n]))
         tcpFromClientStream <- TCPData{
             ConnId: 0,
             Data:   buf[:n],
         }
     }
+}
+
+func isNetCloseError(err error) bool {
+    netErr, ok := err.(net.Error)
+    if !ok {
+        return false
+    }
+
+    if netErr.Timeout() {
+        log.Println("timeout")
+        return true
+    }
+
+    opErr, ok := netErr.(*net.OpError)
+    if !ok {
+        return false
+    }
+
+    switch t := opErr.Err.(type) {
+    case *net.DNSError:
+        log.Printf("net.DNSError:%+v", t)
+        return true
+    case *os.SyscallError:
+        log.Printf("os.SyscallError:%+v", t)
+        if errno, ok := t.Err.(syscall.Errno); ok {
+            switch errno {
+            case syscall.ECONNREFUSED:
+                log.Println("connect refused")
+                return true
+            case syscall.ETIMEDOUT:
+                log.Println("timeout")
+                return true
+            }
+        }
+    }
+
+    return false
 }
