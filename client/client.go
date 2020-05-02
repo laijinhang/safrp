@@ -192,4 +192,7 @@ func IntranetTransmitSend(c net.Conn, data []byte) {
         return
     }
     _, err = c.Write(data)
+    if err != nil {
+        fmt.Println(err)
+    }
 }
