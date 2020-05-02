@@ -20,12 +20,11 @@ type Config struct {
 }
 
 var conf Config
+var BufSize = 1024 * 8
 
 var tcpToServerStream = make(chan TCPData, 1000)
 var tcpFromServerStream = make(chan TCPData, 1000)
 var closeConn = make(chan bool, 2)
-
-var addr = "127.0.0.1:8001"
 
 type TCPData struct {
     ConnId int
@@ -65,16 +64,33 @@ func main() {
 
 func proxyClient() {
     fmt.Println("safrp client ...")
+    var lock sync.Mutex
+    var num = 0
     for {
-        conn, err := net.Dial("tcp", conf.ServerIP + ":" + conf.ServerPort)
-        if err != nil {
-            fmt.Println(err)
-            time.Sleep(3 * time.Second)
-            continue
+        lock.Lock()
+        if num < 30 {
+            num++
+            lock.Unlock()
+            go func() {
+                defer func() {
+                    lock.Lock()
+                    num--
+                    lock.Unlock()
+                }()
+                conn, err := net.Dial("tcp", conf.ServerIP + ":" + conf.ServerPort)
+                if err != nil {
+                    fmt.Println(err)
+                    time.Sleep(3 * time.Second)
+                    return
+                }
+                fmt.Println("connect success ...")
+                go Read(conn)
+                Send(conn)
+                fmt.Println("重连")
+            }()
+        } else {
+            lock.Unlock()
         }
-        fmt.Println("connect success ...")
-        go Read(conn)
-        Send(conn)
     }
 }
 
@@ -87,7 +103,7 @@ func Read(c net.Conn) {
     tBuf := BufPool.Get()
     buf := []byte{}
     if tBuf == nil {
-        buf = make([]byte, 1024 * 10)
+        buf = make([]byte, BufSize)
     } else {
         buf = tBuf.([]byte)
     }
@@ -151,7 +167,7 @@ func Client() {
 
 // 从 内网服务器 读数据
 func IntranetTransmitRead(c net.Conn, cId int) {
-    buf := make([]byte, 1024 * 100 * 100)
+    buf := make([]byte, BufSize)
     for {
         err := c.SetReadDeadline(time.Now().Add(2 * time.Second))
         if err != nil {
@@ -164,6 +180,8 @@ func IntranetTransmitRead(c net.Conn, cId int) {
             }
             return
         }
+        //data := bytes.Replace(buf[:n], []byte(conf.ServerIP + ":" + conf.ServerPort), []byte("www.laijinhang.xyz"), 1)
+        //fmt.Println(string(data))
         tcpToServerStream <- TCPData{
             ConnId: cId,
             Data:   buf[:n],
@@ -176,14 +194,14 @@ func IntranetTransmitRead(c net.Conn, cId int) {
 // 往 内网服务器 发数据
 func IntranetTransmitSend(c net.Conn, data []byte) {
     fmt.Println("请求服务")
-    tBuf := bytes.SplitN(data, []byte("\r\n"), 3)
-
-    tBuf[1] = []byte("Host: " + conf.HTTPIP)
-    if conf.HTTPPort != "80" {
-       tBuf[1] = append(tBuf[1], []byte(":" + conf.HTTPPort)...)
-    }
-    data = bytes.Join(tBuf, []byte("\r\n"))
-    fmt.Println(string(data))
+    //tBuf := bytes.SplitN(data, []byte("\r\n"), 3)
+    //
+    //tBuf[1] = []byte("Host: " + conf.HTTPIP)
+    //if conf.HTTPPort != "80" {
+    //   tBuf[1] = append(tBuf[1], []byte(":" + conf.HTTPPort)...)
+    //}
+    //data = bytes.Join(tBuf, []byte("\r\n"))
+    //fmt.Println(string(data))
     //data = bytes.Replace(data, []byte(conf.ServerIP + ":10000"), []byte(conf.HTTPIP), 3)
     //fmt.Println(string(data))
     err := c.SetWriteDeadline(time.Now().Add(2 * time.Second))

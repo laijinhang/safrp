@@ -15,10 +15,13 @@ import (
 type Config struct {
     ServerIP string
     ServerPort string
+    SafrpIP string
+    SafrpPort string
 }
 
 
 var conf Config
+var BufSize = 1024 * 8
 
 var tcpToClientStream = make(chan TCPData, 1000)
 var tcpFromClientStream [1001]interface{}
@@ -40,6 +43,8 @@ func init() {
     conf.ServerIP = temp.String()
     temp, _ =cfg.Section("server").GetKey("port")
     conf.ServerPort = temp.String()
+    temp, _ =cfg.Section("safrp").GetKey("port")
+    conf.SafrpPort = temp.String()
 }
 
 type TCPData struct {
@@ -55,7 +60,8 @@ func main() {
 
 // 处理 外网 请求
 func proxyServer() {
-    listen, err := net.Listen("tcp", ":10000")
+    listen, err := net.Listen("tcp", conf.ServerIP + ":" + conf.ServerPort)
+    fmt.Println("listen :" + conf.ServerIP + ":" + conf.ServerPort + " ...")
     if err != nil {
         panic(err)
     }
@@ -91,7 +97,7 @@ func ExtranetRead(c net.Conn, number int) {
     tBuf := BufPool.Get()
     buf := []byte{}
     if tBuf == nil {
-        buf = make([]byte, 1024 * 10)
+        buf = make([]byte, BufSize)
     } else {
         buf = tBuf.([]byte)
     }
@@ -111,6 +117,7 @@ func ExtranetRead(c net.Conn, number int) {
             }
             return
         }
+        fmt.Println(string(buf[:n]))
         tcpToClientStream <- TCPData{
             ConnId: number,
             Data:   buf[:n],
@@ -138,7 +145,7 @@ func ExtranetSend(c net.Conn, number int) {
                 return
             }
         default:
-            if time.Now().Unix() - BeginTime >= int64(3) {
+            if time.Now().Unix() - BeginTime >= int64(6) {
                 c.Close()
                 return
             }
@@ -148,8 +155,8 @@ func ExtranetSend(c net.Conn, number int) {
 
 // 处理穿透内网服务
 func server() {
-    listen, err := net.Listen("tcp", "127.0.0.1:8002")
-    fmt.Println("safrp server listen :8002 ...")
+    listen, err := net.Listen("tcp", ":"+ conf.SafrpPort)
+    fmt.Println("safrp server listen :" + conf.SafrpPort + " ...")
     if err != nil {
         panic(err)
     }
@@ -172,16 +179,14 @@ func Send(c net.Conn) {
     for {
         select {
         case data := <- tcpToClientStream:
-            fmt.Println("向内网发送数据")
             err := c.SetWriteDeadline(time.Now().Add(2 * time.Second))
-            n, err := c.Write(append([]byte(strconv.Itoa(data.ConnId)+"\r\n"), data.Data...))
+            _, err = c.Write(append([]byte(strconv.Itoa(data.ConnId)+"\r\n"), data.Data...))
             if err != nil {
                 if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
                     continue
                 }
                 return
             }
-            fmt.Println(n, err)
         }
     }
 }
@@ -192,7 +197,7 @@ func Read(c net.Conn) {
     tBuf := BufPool.Get()
     buf := []byte{}
     if tBuf == nil {
-        buf = make([]byte, 1024 * 100)
+        buf = make([]byte, BufSize)
     } else {
         buf = tBuf.([]byte)
     }
@@ -208,7 +213,6 @@ func Read(c net.Conn) {
             }
             return
         }
-        fmt.Println("从内网读取数据")
         tBuf := bytes.SplitN(buf[:n], []byte("\r\n"), 2)
         tId := 0
         for i := 0;i < len(tBuf[0]);i++ {
@@ -216,7 +220,6 @@ func Read(c net.Conn) {
                 tId = tId * 10 + int(tBuf[0][i] - '0')
             }
         }
-        fmt.Println("编号:", tId)
         tcpFromClientStream[tId].(chan TCPData) <- TCPData{
             ConnId: tId,
             Data:   tBuf[1],
