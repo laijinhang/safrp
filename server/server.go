@@ -3,11 +3,22 @@ package main
 import (
     "bytes"
     "fmt"
+    "gopkg.in/ini.v1"
+    "io"
+    "log"
     "net"
     "strconv"
     "sync"
     "time"
 )
+
+type Config struct {
+    ServerIP string
+    ServerPort string
+}
+
+
+var conf Config
 
 var tcpToClientStream = make(chan TCPData, 1000)
 var tcpFromClientStream [1001]interface{}
@@ -21,6 +32,14 @@ func init() {
         ConnPool.Put(i)
         tcpFromClientStream[i] = make(chan TCPData, 10)
     }
+    cfg, err := ini.Load("./safrp.ini")
+    if err != nil {
+        log.Fatal("Fail to read file: ", err)
+    }
+    temp, _ :=cfg.Section("server").GetKey("ip")
+    conf.ServerIP = temp.String()
+    temp, _ =cfg.Section("server").GetKey("port")
+    conf.ServerPort = temp.String()
 }
 
 type TCPData struct {
@@ -87,7 +106,10 @@ func ExtranetRead(c net.Conn, number int) {
         }
         n, err := c.Read(buf)
         if err != nil {
-            break
+            if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
+                continue
+            }
+            return
         }
         tcpToClientStream <- TCPData{
             ConnId: number,
@@ -98,14 +120,9 @@ func ExtranetRead(c net.Conn, number int) {
 
 // 往 外网 响应数据
 func ExtranetSend(c net.Conn, number int) {
-    tBuf := BufPool.Get()
-    buf := []byte{}
-    if tBuf == nil {
-        buf = make([]byte, 1024 * 10)
-    } else {
-        buf = tBuf.([]byte)
-    }
+    defer c.Close()
 
+    BeginTime := time.Now().Unix()
     for {
         select {
         case data := <- tcpFromClientStream[number].(chan TCPData):
@@ -113,10 +130,18 @@ func ExtranetSend(c net.Conn, number int) {
             if err != nil {
                 continue
             }
-            n, err := c.Write(data.Data)
-            fmt.Println("向外网发送数据")
-            fmt.Println(string(buf[:n]))
-            c.Close()
+            _, err = c.Write(data.Data)
+            if err != nil {
+                if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
+                    continue
+                }
+                return
+            }
+        default:
+            if time.Now().Unix() - BeginTime >= int64(3) {
+                c.Close()
+                return
+            }
         }
     }
 }
@@ -150,6 +175,12 @@ func Send(c net.Conn) {
             fmt.Println("向内网发送数据")
             err := c.SetWriteDeadline(time.Now().Add(2 * time.Second))
             n, err := c.Write(append([]byte(strconv.Itoa(data.ConnId)+"\r\n"), data.Data...))
+            if err != nil {
+                if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
+                    continue
+                }
+                return
+            }
             fmt.Println(n, err)
         }
     }
@@ -157,6 +188,7 @@ func Send(c net.Conn) {
 
 // 从 内网穿透服务器 读数据
 func Read(c net.Conn) {
+    defer fmt.Println("safrp client " + c.RemoteAddr().String() + " close ...")
     tBuf := BufPool.Get()
     buf := []byte{}
     if tBuf == nil {
@@ -171,6 +203,9 @@ func Read(c net.Conn) {
     for {
         n, err := c.Read(buf)
         if err != nil {
+            if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
+                continue
+            }
             return
         }
         fmt.Println("从内网读取数据")
@@ -181,6 +216,7 @@ func Read(c net.Conn) {
                 tId = tId * 10 + int(tBuf[0][i] - '0')
             }
         }
+        fmt.Println("编号:", tId)
         tcpFromClientStream[tId].(chan TCPData) <- TCPData{
             ConnId: tId,
             Data:   tBuf[1],
