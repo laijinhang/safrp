@@ -3,12 +3,23 @@ package main
 import (
     "bytes"
     "fmt"
+    "gopkg.in/ini.v1"
     "io"
+    "log"
     "net"
     "strconv"
     "sync"
     "time"
 )
+
+type Config struct {
+    ServerIP string
+    ServerPort string
+    HTTPIP string
+    HTTPPort string
+}
+
+var conf Config
 
 var tcpToServerStream = make(chan TCPData, 1000)
 var tcpFromServerStream = make(chan TCPData, 1000)
@@ -24,6 +35,27 @@ type TCPData struct {
 var ConnPool = sync.Pool{}
 var BufPool = sync.Pool{}
 
+func init() {
+    cfg, err := ini.Load("./safrp.ini")
+    if err != nil {
+        log.Fatal("Fail to read file: ", err)
+    }
+    temp, _ :=cfg.Section("server").GetKey("ip")
+    conf.ServerIP = temp.String()
+    temp, _ =cfg.Section("server").GetKey("port")
+    conf.ServerPort = temp.String()
+    temp, _ =cfg.Section("http").GetKey("ip")
+    conf.HTTPIP = temp.String()
+    temp, _ =cfg.Section("http").GetKey("port")
+    conf.HTTPPort = temp.String()
+
+    fmt.Println("load safrp.ini ...")
+    fmt.Println("server-ip:", conf.ServerIP)
+    fmt.Println("server-port:", conf.ServerPort)
+    fmt.Println("http-ip:", conf.HTTPIP)
+    fmt.Println("http-port:", conf.HTTPPort)
+    fmt.Println()
+}
 
 func main() {
     go proxyClient()
@@ -34,7 +66,7 @@ func main() {
 func proxyClient() {
     fmt.Println("safrp client ...")
     for {
-        conn, err := net.Dial("tcp", "127.0.0.1:8002")
+        conn, err := net.Dial("tcp", conf.ServerIP + ":" + conf.ServerPort)
         if err != nil {
             fmt.Println(err)
             time.Sleep(3 * time.Second)
@@ -68,7 +100,7 @@ func Read(c net.Conn) {
             return
         }
         n, err := c.Read(buf)
-        if n == 0 {
+        if err != nil {
             if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
                  continue
             }
@@ -106,7 +138,7 @@ func Client() {
     for {
         select {
         case data := <- tcpFromServerStream:
-            c, err := net.Dial("tcp", "127.0.0.1:8003")
+            c, err := net.Dial("tcp", conf.HTTPIP + ":" + conf.HTTPPort)
             fmt.Println(err)
             if err != nil {
                 return
@@ -119,7 +151,7 @@ func Client() {
 
 // 从 内网服务器 读数据
 func IntranetTransmitRead(c net.Conn, cId int) {
-    buf := make([]byte, 1024)
+    buf := make([]byte, 1024 * 100 * 100)
     for {
         err := c.SetReadDeadline(time.Now().Add(2 * time.Second))
         if err != nil {
@@ -144,11 +176,20 @@ func IntranetTransmitRead(c net.Conn, cId int) {
 // 往 内网服务器 发数据
 func IntranetTransmitSend(c net.Conn, data []byte) {
     fmt.Println("请求服务")
+    tBuf := bytes.SplitN(data, []byte("\r\n"), 3)
+
+    tBuf[1] = []byte("Host: " + conf.HTTPIP)
+    if conf.HTTPPort != "80" {
+       tBuf[1] = append(tBuf[1], []byte(":" + conf.HTTPPort)...)
+    }
+    data = bytes.Join(tBuf, []byte("\r\n"))
+    fmt.Println(string(data))
+    //data = bytes.Replace(data, []byte(conf.ServerIP + ":10000"), []byte(conf.HTTPIP), 3)
+    //fmt.Println(string(data))
     err := c.SetWriteDeadline(time.Now().Add(2 * time.Second))
     if err != nil {
         fmt.Println(err)
         return
     }
     _, err = c.Write(data)
-    fmt.Println(err)
 }
