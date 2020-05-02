@@ -1,9 +1,11 @@
 package main
 
 import (
+    "bytes"
     "fmt"
     "io"
     "net"
+    "strconv"
     "sync"
     "time"
 )
@@ -15,7 +17,7 @@ var closeConn = make(chan bool, 2)
 var addr = "127.0.0.1:8001"
 
 type TCPData struct {
-    ConnId uint64
+    ConnId int
     Data []byte
 }
 
@@ -72,10 +74,16 @@ func Read(c net.Conn) {
             }
             return
         }
-        fmt.Println(string(buf[:n]))
+        tBuf := bytes.SplitN(buf[:n], []byte("\r\n"), 2)
+        tId := 0
+        for i := 0;i < len(tBuf[0]);i++ {
+            if tBuf[0][i] != '\r' && tBuf[0][i] != '\n' {
+                tId = tId * 10 + int(tBuf[0][i] - '0')
+            }
+        }
         tcpFromServerStream <- TCPData{
-            ConnId: 0,
-            Data:   buf[:n],
+            ConnId: tId,
+            Data:   tBuf[1],
         }
     }
 }
@@ -84,8 +92,8 @@ func Read(c net.Conn) {
 func Send(c net.Conn) {
     for {
         select {
-        case data := <- tcpFromServerStream:
-            _, err := c.Write(data.Data)
+        case data := <- tcpToServerStream:
+            _, err := c.Write(append([]byte(strconv.Itoa(data.ConnId) + "\r\n"), data.Data...))
             if err != nil {
             }
         case <- closeConn:
@@ -98,18 +106,19 @@ func Client() {
     for {
         select {
         case data := <- tcpFromServerStream:
-            c, err := net.Dial("tcp", "127.0.0.1:81")
+            c, err := net.Dial("tcp", "127.0.0.1:8003")
+            fmt.Println(err)
             if err != nil {
                 return
             }
             go IntranetTransmitSend(c, data.Data)
-            IntranetTransmitRead(c)
+            IntranetTransmitRead(c, data.ConnId)
         }
     }
 }
 
 // 从 内网服务器 读数据
-func IntranetTransmitRead(c net.Conn) {
+func IntranetTransmitRead(c net.Conn, cId int) {
     buf := make([]byte, 1024)
     for {
         err := c.SetReadDeadline(time.Now().Add(2 * time.Second))
@@ -117,12 +126,14 @@ func IntranetTransmitRead(c net.Conn) {
             return
         }
         n, err := c.Read(buf)
-        if err != nil {
-            continue
+        if n == 0 {
+            if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
+                continue
+            }
+            return
         }
-        fmt.Println(string(buf[:n]))
         tcpToServerStream <- TCPData{
-            ConnId: 0,
+            ConnId: cId,
             Data:   buf[:n],
         }
         return
@@ -132,13 +143,12 @@ func IntranetTransmitRead(c net.Conn) {
 
 // 往 内网服务器 发数据
 func IntranetTransmitSend(c net.Conn, data []byte) {
+    fmt.Println("请求服务")
     err := c.SetWriteDeadline(time.Now().Add(2 * time.Second))
     if err != nil {
         fmt.Println(err)
         return
     }
     _, err = c.Write(data)
-    if err != nil {
-        fmt.Println(err)
-    }
+    fmt.Println(err)
 }

@@ -1,18 +1,16 @@
 package main
 
 import (
+    "bytes"
     "fmt"
-    "log"
     "net"
-    "os"
     "strconv"
     "sync"
-    "syscall"
     "time"
 )
 
 var tcpToClientStream = make(chan TCPData, 1000)
-var tcpFromClientStream = make(chan TCPData, 1000)
+var tcpFromClientStream [1001]interface{}
 
 var ConnPool = sync.Pool{}
 var BufPool = sync.Pool{}
@@ -21,6 +19,7 @@ var DeadTime = make([]chan interface{}, 1001)
 func init() {
     for i := 1;i <= 1000;i++ {
         ConnPool.Put(i)
+        tcpFromClientStream[i] = make(chan TCPData, 10)
     }
 }
 
@@ -109,7 +108,7 @@ func ExtranetSend(c net.Conn, number int) {
 
     for {
         select {
-        case data := <- tcpFromClientStream:
+        case data := <- tcpFromClientStream[number].(chan TCPData):
             err := c.SetWriteDeadline(time.Now().Add(3 * time.Second))
             if err != nil {
                 continue
@@ -117,6 +116,7 @@ func ExtranetSend(c net.Conn, number int) {
             n, err := c.Write(data.Data)
             fmt.Println("向外网发送数据")
             fmt.Println(string(buf[:n]))
+            c.Close()
         }
     }
 }
@@ -174,47 +174,16 @@ func Read(c net.Conn) {
             return
         }
         fmt.Println("从内网读取数据")
-        fmt.Println(string(buf[:n]))
-        tcpFromClientStream <- TCPData{
-            ConnId: 0,
-            Data:   buf[:n],
-        }
-    }
-}
-
-func isNetCloseError(err error) bool {
-    netErr, ok := err.(net.Error)
-    if !ok {
-        return false
-    }
-
-    if netErr.Timeout() {
-        log.Println("timeout")
-        return true
-    }
-
-    opErr, ok := netErr.(*net.OpError)
-    if !ok {
-        return false
-    }
-
-    switch t := opErr.Err.(type) {
-    case *net.DNSError:
-        log.Printf("net.DNSError:%+v", t)
-        return true
-    case *os.SyscallError:
-        log.Printf("os.SyscallError:%+v", t)
-        if errno, ok := t.Err.(syscall.Errno); ok {
-            switch errno {
-            case syscall.ECONNREFUSED:
-                log.Println("connect refused")
-                return true
-            case syscall.ETIMEDOUT:
-                log.Println("timeout")
-                return true
+        tBuf := bytes.SplitN(buf[:n], []byte("\r\n"), 2)
+        tId := 0
+        for i := 0;i < len(tBuf[0]);i++ {
+            if tBuf[0][i] != '\r' && tBuf[0][i] != '\n' {
+                tId = tId * 10 + int(tBuf[0][i] - '0')
             }
         }
+        tcpFromClientStream[tId].(chan TCPData) <- TCPData{
+            ConnId: tId,
+            Data:   tBuf[1],
+        }
     }
-
-    return false
 }
