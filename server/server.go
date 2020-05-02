@@ -192,7 +192,7 @@ func Read(c net.Conn) {
     tBuf := BufPool.Get()
     buf := []byte{}
     if tBuf == nil {
-        buf = make([]byte, 1024 * 10)
+        buf = make([]byte, 1024 * 100)
     } else {
         buf = tBuf.([]byte)
     }
