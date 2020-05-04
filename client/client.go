@@ -15,6 +15,7 @@ import (
 type Config struct {
     ServerIP string
     ServerPort string
+    Password string
     HTTPIP string
     HTTPPort string
 }
@@ -42,6 +43,8 @@ func init() {
     conf.ServerIP = temp.String()
     temp, _ =cfg.Section("server").GetKey("port")
     conf.ServerPort = temp.String()
+    temp, _ =cfg.Section("server").GetKey("password")
+    conf.Password = temp.String()
     temp, _ =cfg.Section("http").GetKey("ip")
     conf.HTTPIP = temp.String()
     temp, _ =cfg.Section("http").GetKey("port")
@@ -50,6 +53,7 @@ func init() {
     fmt.Println("load safrp.ini ...")
     fmt.Println("server-ip:", conf.ServerIP)
     fmt.Println("server-port:", conf.ServerPort)
+    fmt.Println("server-password:", conf.Password)
     fmt.Println("http-ip:", conf.HTTPIP)
     fmt.Println("http-port:", conf.HTTPPort)
     fmt.Println()
@@ -80,7 +84,25 @@ func proxyClient() {
                     time.Sleep(3 * time.Second)
                     return
                 }
-                fmt.Println("connect success ...")
+                err = conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+                if err != nil {
+                    return
+                }
+                _, err = conn.Write([]byte(conf.Password))
+                if err != nil {
+                    return
+                }
+                err = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+                if err != nil {
+                    return
+                }
+                buf := make([]byte, 100)
+                _, err = conn.Read(buf)
+                if err != nil {
+                    fmt.Println("密码错误...")
+                    return
+                }
+                fmt.Println(string(buf))
 
                 var closeConn = make(chan bool, 5)
                 go Read(conn, closeConn)

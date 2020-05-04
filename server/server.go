@@ -13,6 +13,7 @@ import (
 )
 
 type Config struct {
+    Password string
     ServerIP string
     ServerPort string
     SafrpIP string
@@ -67,6 +68,8 @@ func init() {
     conf.ServerPort = temp.String()
     temp, _ =cfg.Section("safrp").GetKey("port")
     conf.SafrpPort = temp.String()
+    temp, _ =cfg.Section("").GetKey("password")
+    conf.Password = temp.String()
 }
 
 type TCPData struct {
@@ -192,9 +195,27 @@ func server() {
             fmt.Println(err)
             continue
         }
-        fmt.Println("safrp client ", client.RemoteAddr(), "connect success ...")
         go func(c net.Conn) {
+            fmt.Println("frp client尝试建立连接...")
+            buf := BufPool.Get().([]byte)
+            err := c.SetReadDeadline(time.Now().Add(3 * time.Second))
+            if err != nil {
+                fmt.Println("password error...")
+                return
+            }
+            n, err := c.Read(buf)
+            if err != nil || string(buf[:n]) != conf.Password {
+                fmt.Println("password error...")
+                return
+            }
             defer fmt.Println("safrp client " + c.RemoteAddr().String() + " close ...")
+            err = c.SetWriteDeadline(time.Now().Add(3 * time.Second))
+            n, err = c.Write([]byte("connect success ..."))
+            if err != nil {
+                return
+            }
+
+            fmt.Println("safrp client ", client.RemoteAddr(), "connect success ...")
             go Send(c)
             Read(c)
         }(client)
