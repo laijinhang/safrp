@@ -96,6 +96,10 @@ func proxyServer() {
             return
         }
         go func(c net.Conn) {
+            defer func() {
+                for err := recover();err != nil;err = recover(){
+                }
+            }()
             defer c.Close()
             num := -1
             for c := 0;num == -1;c++ {
@@ -196,6 +200,10 @@ func server() {
             continue
         }
         go func(c net.Conn) {
+            defer func() {
+                for err := recover();err != nil;err = recover(){
+                }
+            }()
             fmt.Println("frp client尝试建立连接...")
             buf := BufPool.Get().([]byte)
             err := c.SetReadDeadline(time.Now().Add(3 * time.Second))
