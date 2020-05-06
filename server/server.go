@@ -9,6 +9,7 @@ import (
     "net"
     "strconv"
     "sync"
+    "sync/atomic"
     "time"
 )
 
@@ -21,26 +22,41 @@ type Config struct {
 }
 
 type NumberPool struct {
-    val []interface{}
-    mutex sync.Mutex
+    numberArr []uint64
+    number uint64
+    maxVal uint64
+    add uint64
 }
 
-func (n *NumberPool)Put(x interface{}) {
-    n.mutex.Lock()
-    defer n.mutex.Unlock()
-    n.val = append(n.val, x)
-}
-
-
-func (n *NumberPool)Get() interface{} {
-    n.mutex.Lock()
-    defer n.mutex.Unlock()
-    if len(n.val) == 0 {
-        return nil
+func New(val, add uint64) *NumberPool {
+    return &NumberPool{
+        numberArr:make([]uint64, val+1),
+        number: 1,
+        maxVal: val,
+        add:    add,
     }
-    a := n.val[0]
-    n.val = n.val[1:]
-    return a
+}
+
+func (n *NumberPool)Get() (uint64, bool) {
+    num := 0
+    for i := atomic.LoadUint64(&n.number);;i = atomic.AddUint64(&n.number, n.add) {
+        atomic.CompareAndSwapUint64(&n.number, n.maxVal, 1)
+        num++
+        if num / int(n.maxVal) >= 3 {
+            return 0, false
+        }
+        if i > n.maxVal {
+            i = 1
+        }
+        if atomic.CompareAndSwapUint64(&n.numberArr[i], 0, 1) {
+            return i, true
+        }
+    }
+    return 0, false
+}
+
+func (n *NumberPool)Put(v int) {
+    atomic.CompareAndSwapUint64(&n.numberArr[v], 1, 0)
 }
 
 var conf Config
@@ -49,7 +65,7 @@ var BufSize = 1024 * 8
 var tcpToClientStream = make(chan TCPData, 1000)
 var tcpFromClientStream [1001]interface{}
 
-var ConnPool = NumberPool{}
+var ConnPool = New(1000, 1)
 var BufPool = sync.Pool{New: func() interface{} {return make([]byte, BufSize)}}
 var DeadTime = make([]chan interface{}, 1001)
 
@@ -103,9 +119,9 @@ func proxyServer() {
             defer c.Close()
             num := -1
             for c := 0;num == -1;c++ {
-                tNum := ConnPool.Get()
-                if tNum != nil {
-                    num = tNum.(int)
+                tNum, ok := ConnPool.Get()
+                if ok {
+                    num = int(tNum)
                     break
                 } else {
                     time.Sleep(50 * time.Millisecond)
