@@ -66,93 +66,102 @@ func main() {
 }
 
 func proxyClient() {
-    fmt.Println("safrp client ...")
-    connNum := make(chan bool, 30)
-    for i := 0;i < 30;i++ {
-        connNum <- true
-    }
     for {
-        select {
-        case <-connNum:
-            go func() {
-                defer func() {
-                    connNum <- true
-                }()
-                conn, err := net.Dial("tcp", conf.ServerIP + ":" + conf.ServerPort)
-                if err != nil {
-                    fmt.Println(err)
-                    time.Sleep(3 * time.Second)
-                    return
+        func() {
+            defer func() {
+                for err := recover();err != nil;err = recover(){
                 }
-                err = conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
-                if err != nil {
-                    return
-                }
-                _, err = conn.Write([]byte(conf.Password))
-                if err != nil {
-                    return
-                }
-                err = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-                if err != nil {
-                    return
-                }
-                buf := make([]byte, 100)
-                _, err = conn.Read(buf)
-                if err != nil {
-                    fmt.Println("密码错误...")
-                    return
-                }
-                fmt.Println(string(buf))
-
-                var closeConn = make(chan bool, 5)
-                go Read(conn, closeConn)
-                Send(conn, closeConn)
-                fmt.Println("重连")
             }()
+            
+            fmt.Println("safrp client ...")
+            connNum := make(chan bool, 30)
+            for i := 0;i < 30;i++ {
+                connNum <- true
+            }
+            for {
+                select {
+                case <-connNum:
+                    go func() {
+                        defer func() {
+                            connNum <- true
+                        }()
+                        conn, err := net.Dial("tcp", conf.ServerIP + ":" + conf.ServerPort)
+                        if err != nil {
+                            fmt.Println(err)
+                            time.Sleep(3 * time.Second)
+                            return
+                        }
+                        err = conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+                        if err != nil {
+                            return
+                        }
+                        _, err = conn.Write([]byte(conf.Password))
+                        if err != nil {
+                            return
+                        }
+                        err = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+                        if err != nil {
+                            return
+                        }
+                        buf := make([]byte, 100)
+                        _, err = conn.Read(buf)
+                        if err != nil {
+                            fmt.Println("密码错误...")
+                            return
+                        }
+                        fmt.Println(string(buf))
+
+                        var closeConn = make(chan bool, 5)
+                        go Read(conn, closeConn)
+                        Send(conn, closeConn)
+                        fmt.Println("重连")
+                    }()
+                }
+            }
         }
     }
-}
 
-// 从 内网穿透服务器 读数据
-func Read(c net.Conn, closeConn chan bool) {
-    defer func() {
-        closeConn <- true
-    }()
+    // 从 内网穿透服务器 读数据
+    func Read(c net.Conn, closeConn chan bool) {
+        defer func() {
+            closeConn <- true
+        }()
 
-    tBuf := BufPool.Get()
-    buf := []byte{}
-    if tBuf == nil {
-        buf = make([]byte, BufSize)
-    } else {
-        buf = tBuf.([]byte)
-    }
-    defer func() {
-        BufPool.Put(buf)
-    }()
-    for {
-        err := c.SetReadDeadline(time.Now().Add(3 * time.Second))
-        if err != nil {
-            return
+        tBuf := BufPool.Get()
+        buf := []byte{}
+        if tBuf == nil {
+            buf = make([]byte, BufSize)
+        } else {
+            buf = tBuf.([]byte)
         }
-        n, err := c.Read(buf)
-        if err != nil {
-            if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
-                 continue
+        defer func() {
+            BufPool.Put(buf)
+        }()
+        for {
+            err := c.SetReadDeadline(time.Now().Add(3 * time.Second))
+            if err != nil {
+                return
             }
-            return
-        }
-
-        tBuf := bytes.SplitN(buf[:n], []byte("\r\n"), 2)
-        tId := 0
-        for i := 0;i < len(tBuf[0]);i++ {
-            fmt.Println(tBuf[0])
-            if tBuf[0][i] != '\r' && tBuf[0][i] != '\n' {
-                tId = tId * 10 + int(tBuf[0][i] - '0')
+            n, err := c.Read(buf)
+            if err != nil {
+                if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
+                     continue
+                }
+                return
             }
-        }
-        tcpFromServerStream <- TCPData{
-            ConnId: tId,
-            Data:   tBuf[1],
+
+            tBuf := bytes.SplitN(buf[:n], []byte("\r\n"), 2)
+            tId := 0
+            for i := 0;i < len(tBuf[0]);i++ {
+                fmt.Println(tBuf[0])
+                if tBuf[0][i] != '\r' && tBuf[0][i] != '\n' {
+                    tId = tId * 10 + int(tBuf[0][i] - '0')
+                }
+            }
+            tcpFromServerStream <- TCPData{
+                ConnId: tId,
+                Data:   tBuf[1],
+            }
         }
     }
 }
@@ -221,13 +230,19 @@ func Client() {
     for {
         select {
         case data := <- tcpFromServerStream:
-            c, err := net.Dial("tcp", conf.HTTPIP + ":" + conf.HTTPPort)
-            fmt.Println(err)
-            if err != nil {
-                return
-            }
-            go IntranetTransmitSend(c, data.Data)
-            IntranetTransmitRead(c, data.ConnId)
+            go func(d chan TCPData) {
+                defer func() {
+                    for err := recover();err != nil;err = recover(){
+                    }
+                }()
+                c, err := net.Dial("tcp", conf.HTTPIP + ":" + conf.HTTPPort)
+                fmt.Println(err)
+                if err != nil {
+                    return
+                }
+                go IntranetTransmitSend(c, d.Data)
+                IntranetTransmitRead(c, d.ConnId)
+            }(data)
         }
     }
 }
