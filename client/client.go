@@ -69,13 +69,13 @@ func proxyClient() {
     for {
         func() {
             defer func() {
-                for err := recover();err != nil;err = recover(){
+                for err := recover(); err != nil; err = recover() {
                 }
             }()
-            
+
             fmt.Println("safrp client ...")
             connNum := make(chan bool, 30)
-            for i := 0;i < 30;i++ {
+            for i := 0; i < 30; i++ {
                 connNum <- true
             }
             for {
@@ -85,7 +85,7 @@ func proxyClient() {
                         defer func() {
                             connNum <- true
                         }()
-                        conn, err := net.Dial("tcp", conf.ServerIP + ":" + conf.ServerPort)
+                        conn, err := net.Dial("tcp", conf.ServerIP+":"+conf.ServerPort)
                         if err != nil {
                             fmt.Println(err)
                             time.Sleep(3 * time.Second)
@@ -118,50 +118,49 @@ func proxyClient() {
                     }()
                 }
             }
-        }
+        }()
     }
+}
+// 从 内网穿透服务器 读数据
+func Read(c net.Conn, closeConn chan bool) {
+    defer func() {
+        closeConn <- true
+    }()
 
-    // 从 内网穿透服务器 读数据
-    func Read(c net.Conn, closeConn chan bool) {
-        defer func() {
-            closeConn <- true
-        }()
-
-        tBuf := BufPool.Get()
-        buf := []byte{}
-        if tBuf == nil {
-            buf = make([]byte, BufSize)
-        } else {
-            buf = tBuf.([]byte)
+    tBuf := BufPool.Get()
+    buf := []byte{}
+    if tBuf == nil {
+        buf = make([]byte, BufSize)
+    } else {
+        buf = tBuf.([]byte)
+    }
+    defer func() {
+        BufPool.Put(buf)
+    }()
+    for {
+        err := c.SetReadDeadline(time.Now().Add(3 * time.Second))
+        if err != nil {
+            return
         }
-        defer func() {
-            BufPool.Put(buf)
-        }()
-        for {
-            err := c.SetReadDeadline(time.Now().Add(3 * time.Second))
-            if err != nil {
-                return
+        n, err := c.Read(buf)
+        if err != nil {
+            if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
+                 continue
             }
-            n, err := c.Read(buf)
-            if err != nil {
-                if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
-                     continue
-                }
-                return
-            }
+            return
+        }
 
-            tBuf := bytes.SplitN(buf[:n], []byte("\r\n"), 2)
-            tId := 0
-            for i := 0;i < len(tBuf[0]);i++ {
-                fmt.Println(tBuf[0])
-                if tBuf[0][i] != '\r' && tBuf[0][i] != '\n' {
-                    tId = tId * 10 + int(tBuf[0][i] - '0')
-                }
+        tBuf := bytes.SplitN(buf[:n], []byte("\r\n"), 2)
+        tId := 0
+        for i := 0;i < len(tBuf[0]);i++ {
+            fmt.Println(tBuf[0])
+            if tBuf[0][i] != '\r' && tBuf[0][i] != '\n' {
+                tId = tId * 10 + int(tBuf[0][i] - '0')
             }
-            tcpFromServerStream <- TCPData{
-                ConnId: tId,
-                Data:   tBuf[1],
-            }
+        }
+        tcpFromServerStream <- TCPData{
+            ConnId: tId,
+            Data:   tBuf[1],
         }
     }
 }
@@ -230,7 +229,7 @@ func Client() {
     for {
         select {
         case data := <- tcpFromServerStream:
-            go func(d chan TCPData) {
+            go func(d TCPData) {
                 defer func() {
                     for err := recover();err != nil;err = recover(){
                     }
