@@ -133,6 +133,7 @@ func proxyClient() {
         }()
     }
 }
+
 // 从 内网穿透服务器 读数据
 func Read(c net.Conn, closeConn chan bool) {
     defer func() {
@@ -239,22 +240,28 @@ func Send(c net.Conn, closeConn chan bool) {
 
 func Client() {
     for {
-        select {
-        case data := <- tcpFromServerStream:
-            go func(d TCPData) {
-                defer func() {
-                    for err := recover();err != nil;err = recover(){
-                    }
-                }()
-                c, err := net.Dial("tcp", conf.HTTPIP + ":" + conf.HTTPPort)
-                fmt.Println(err)
-                if err != nil {
-                    return
+        func() {
+            defer func() {
+                for err := recover(); err != nil; err = recover() {
                 }
-                go IntranetTransmitSend(c, d.Data)
-                IntranetTransmitRead(c, d.ConnId)
-            }(data)
-        }
+            }()
+            select {
+            case data := <-tcpFromServerStream:
+                go func(d TCPData) {
+                    defer func() {
+                        for err := recover(); err != nil; err = recover() {
+                        }
+                    }()
+                    c, err := net.Dial("tcp", conf.HTTPIP+":"+conf.HTTPPort)
+                    fmt.Println(err)
+                    if err != nil {
+                        return
+                    }
+                    go IntranetTransmitSend(c, d.Data)
+                    IntranetTransmitRead(c, d.ConnId)
+                }(data)
+            }
+        }()
     }
 }
 
