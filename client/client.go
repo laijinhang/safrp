@@ -97,6 +97,11 @@ func proxyClient() {
                         defer func() {
                             connNum <- true
                         }()
+                        defer func() {
+                            for err := recover(); err != nil; err = recover() {
+                            }
+                        }()
+
                         conn, err := net.Dial("tcp", conf.ServerIP+":"+conf.ServerPort)
                         if err != nil {
                             fmt.Println(err)
@@ -280,9 +285,6 @@ func IntranetTransmitRead(c net.Conn, cId int) {
             }
             return
         }
-        //data := bytes.Replace(buf[:n], []byte(conf.ServerIP + ":" + conf.ServerPort), []byte("www.laijinhang.xyz"), 1)
-        //fmt.Println(string(data))
-        fmt.Println(string(buf[:n]))
         tcpToServerStream <- TCPData{
             ConnId: cId,
             Data:   buf[:n],
