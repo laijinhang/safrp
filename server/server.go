@@ -134,6 +134,8 @@ func proxyTCPServer() {
                     return
                 }
             }
+
+            tcpFromClientStream[num] = make(chan TCPData, 10)
             fmt.Println(client.RemoteAddr(), num)
             defer func() {
                ConnPool.Put(num)
@@ -227,8 +229,10 @@ func ExtranetTCPSend(c net.Conn, number int) {
                 if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
                     continue
                 }
+                close(tcpFromClientStream[number].(chan TCPData))
                 return
             }
+            BeginTime = time.Now().Unix()
         default:
             if time.Now().Unix() - BeginTime >= int64(6) {
                 c.Close()
@@ -354,10 +358,15 @@ func ReadStream(c net.Conn) {
                         if tId > 1000 || tId < 0 {
                             continue
                         }
-                        tcpFromClientStream[tId].(chan TCPData) <- TCPData{
+                        go func(tId int, data TCPData) {
+                            defer func() {
+                                for err := recover();err != nil;err = recover(){
+                                }
+                            }()
+                            tcpFromClientStream[tId].(chan TCPData) <- data
+                        }(tId, TCPData{
                             ConnId: tId,
-                            Data:   tBuf[1],
-                        }
+                            Data:   append([]byte(""), tBuf[1]...)})
                     } else {
                         select {
                         case data = <- streamData:

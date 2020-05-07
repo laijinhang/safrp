@@ -32,7 +32,9 @@ type TCPData struct {
 }
 
 var ConnPool = sync.Pool{}
-var BufPool = sync.Pool{}
+var BufPool = sync.Pool{New: func() interface{} {
+    return make([]byte, 1024 * 1024 * 8)
+}}
 
 func init() {
     cfg, err := ini.Load("./safrp.ini")
@@ -145,13 +147,7 @@ func Read(c net.Conn, closeConn chan bool) {
         closeConn <- true
     }()
 
-    tBuf := BufPool.Get()
-    buf := []byte{}
-    if tBuf == nil {
-        buf = make([]byte, BufSize)
-    } else {
-        buf = tBuf.([]byte)
-    }
+    buf := BufPool.Get().([]byte)
     defer func() {
         BufPool.Put(buf)
     }()
@@ -169,6 +165,9 @@ func Read(c net.Conn, closeConn chan bool) {
         }
 
         tBuf := bytes.SplitN(buf[:n], []byte("\r\n"), 2)
+        if len(tBuf) == 1 {
+            continue
+        }
         tId := 0
         for i := 0;i < len(tBuf[0]);i++ {
             fmt.Println(tBuf[0])
