@@ -16,7 +16,8 @@ import (
 type Config struct {
     Password string
     ServerIP string
-    ServerPort string
+    ServerTCPPort string
+    ServerUDPPort string
     SafrpIP string
     SafrpPort string
 }
@@ -80,8 +81,8 @@ func init() {
     }
     temp, _ :=cfg.Section("server").GetKey("ip")
     conf.ServerIP = temp.String()
-    temp, _ =cfg.Section("server").GetKey("port")
-    conf.ServerPort = temp.String()
+    temp, _ =cfg.Section("server").GetKey("tcp_port")
+    conf.ServerTCPPort = temp.String()
     temp, _ =cfg.Section("safrp").GetKey("port")
     conf.SafrpPort = temp.String()
     temp, _ =cfg.Section("").GetKey("password")
@@ -94,15 +95,16 @@ type TCPData struct {
 }
 
 func main() {
-    go proxyServer()    // 处理外网请求，短连接服务
-    go server()         // 与穿透客户端进行交互，长连接服务
+    go proxyTCPServer()     // 处理TCP外网请求，短连接服务
+    go proxyUDPServer()     // 处理UDP外网请求
+    go server()             // 与穿透客户端进行交互，长连接服务
     select {}
 }
 
-// 处理 外网 请求
-func proxyServer() {
-    listen, err := net.Listen("tcp", conf.ServerIP + ":" + conf.ServerPort)
-    fmt.Println("listen :" + conf.ServerIP + ":" + conf.ServerPort + " ...")
+// 处理 TCP外网 请求
+func proxyTCPServer() {
+    listen, err := net.Listen("tcp", conf.ServerIP + ":" + conf.ServerTCPPort)
+    fmt.Println("listen :" + conf.ServerIP + ":" + conf.ServerTCPPort + " ...")
     if err != nil {
         panic(err)
     }
@@ -135,14 +137,40 @@ func proxyServer() {
                ConnPool.Put(num)
                c.Close()
             }()
-            go ExtranetRead(c, num)
-            ExtranetSend(c, num)
+            go ExtranetTCPRead(c, num)
+            ExtranetTCPSend(c, num)
         }(client)
     }
 }
 
-// 从 外网 接收数据
-func ExtranetRead(c net.Conn, number int) {
+// 处理 UDP外网 请求
+func proxyUDPServer() {
+    wg := sync.WaitGroup{}
+    for {
+        wg.Add(1)
+        go func() {
+            defer wg.Done()
+            defer func() {
+                for v := recover();v != nil;v = recover() {
+                    fmt.Println(v)
+                }
+            }()
+            udpAddr, err := net.ResolveUDPAddr("udp", conf.ServerIP+":"+conf.ServerUDPPort)
+            if err != nil {
+                panic(err)
+            }
+            for {
+                conn, err := net.ListenUDP("udp", udpAddr)
+                // 处理连接进来的读操作
+                // 处理连接进来的写操作
+            }
+        }()
+        wg.Wait()
+    }
+}
+
+// 从 外网 接收TCP数据
+func ExtranetTCPRead(c net.Conn, number int) {
     tBuf := BufPool.Get()
     buf := []byte{}
     if tBuf == nil {
@@ -174,8 +202,8 @@ func ExtranetRead(c net.Conn, number int) {
     }
 }
 
-// 往 外网 响应数据
-func ExtranetSend(c net.Conn, number int) {
+// 往 外网 响应TCP数据
+func ExtranetTCPSend(c net.Conn, number int) {
     defer c.Close()
 
     BeginTime := time.Now().Unix()
@@ -200,6 +228,16 @@ func ExtranetSend(c net.Conn, number int) {
             }
         }
     }
+}
+
+// 从 外网 接收UDP数据
+func ExtranetUDPRead(c net.Conn, number int) {
+
+}
+
+// 往 外网 响应UDP数据
+func ExtranetUDPSend(c net.Conn, number int) {
+
 }
 
 // 处理穿透内网服务

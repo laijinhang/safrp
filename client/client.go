@@ -60,9 +60,21 @@ func init() {
 }
 
 func main() {
-    go proxyClient()
-    go Client()
-    select {}
+    wg := sync.WaitGroup{}
+    for {
+        wg.Add(1)
+        go func() {
+            defer wg.Done()
+            defer func() {
+                for v := recover();;v = recover() {
+                    fmt.Println(v)
+                }
+            }()
+            go proxyClient()
+            go Client()
+        }()
+        wg.Wait()
+    }
 }
 
 func proxyClient() {
