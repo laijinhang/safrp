@@ -83,6 +83,8 @@ func init() {
     conf.ServerIP = temp.String()
     temp, _ =cfg.Section("server").GetKey("tcp_port")
     conf.ServerTCPPort = temp.String()
+    temp, _ =cfg.Section("server").GetKey("udp_port")
+    conf.ServerUDPPort = temp.String()
     temp, _ =cfg.Section("safrp").GetKey("port")
     conf.SafrpPort = temp.String()
     temp, _ =cfg.Section("").GetKey("password")
@@ -145,34 +147,34 @@ func proxyTCPServer() {
 
 // 处理 UDP外网 请求
 func proxyUDPServer() {
-    wg := sync.WaitGroup{}
-    for {
-        wg.Add(1)
-        go func() {
-            defer wg.Done()
-            defer func() {
-                for v := recover();v != nil;v = recover() {
-                    fmt.Println(v)
-                }
-            }()
-            udpAddr, err := net.ResolveUDPAddr("udp", conf.ServerIP+":"+conf.ServerUDPPort)
-            if err != nil {
-                panic(err)
-            }
-            for {
-                conn, err := net.ListenUDP("udp", udpAddr)
-                if err != nil {
-                    fmt.Println(err)
-                    continue
-                }
-                go func(c net.Conn) {
-                    // 处理连接进来的读操作
-                    // 处理连接进来的写操作
-                }(conn)
-            }
-        }()
-        wg.Wait()
-    }
+    //wg := sync.WaitGroup{}
+    //for {
+    //    wg.Add(1)
+    //    go func() {
+    //        defer wg.Done()
+    //        defer func() {
+    //            for v := recover();v != nil;v = recover() {
+    //                fmt.Println(v)
+    //            }
+    //        }()
+    //        udpAddr, err := net.ResolveUDPAddr("udp", conf.ServerIP+":"+conf.ServerUDPPort)
+    //        if err != nil {
+    //            panic(err)
+    //        }
+    //        for {
+    //            conn, err := net.ListenUDP("udp", udpAddr)
+    //            if err != nil {
+    //                fmt.Println(err)
+    //                continue
+    //            }
+    //            go func(c net.Conn) {
+    //                // 处理连接进来的读操作
+    //                // 处理连接进来的写操作
+    //            }(conn)
+    //        }
+    //    }()
+    //    wg.Wait()
+    //}
 }
 
 // 从 外网 接收TCP数据

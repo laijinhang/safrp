@@ -71,7 +71,7 @@ func main() {
                 }
             }()
             go proxyClient()
-            go Client()
+            Client()
         }()
         wg.Wait()
     }
