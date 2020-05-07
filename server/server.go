@@ -161,8 +161,14 @@ func proxyUDPServer() {
             }
             for {
                 conn, err := net.ListenUDP("udp", udpAddr)
-                // 处理连接进来的读操作
-                // 处理连接进来的写操作
+                if err != nil {
+                    fmt.Println(err)
+                    continue
+                }
+                go func(c net.Conn) {
+                    // 处理连接进来的读操作
+                    // 处理连接进来的写操作
+                }(conn)
             }
         }()
         wg.Wait()
