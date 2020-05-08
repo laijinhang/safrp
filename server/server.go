@@ -97,10 +97,28 @@ type TCPData struct {
 }
 
 func main() {
-    go proxyTCPServer()     // 处理TCP外网请求，短连接服务
-    go proxyUDPServer()     // 处理UDP外网请求
-    go server()             // 与穿透客户端进行交互，长连接服务
+    go run(proxyTCPServer)  // 处理TCP外网请求，短连接服务
+    go run(proxyUDPServer)  // 处理UDP外网请求
+    go run(server)  // 处理TCP外网请求，短连接服务
     select {}
+}
+
+func run(server func()) {
+    wg := sync.WaitGroup{}
+    for {
+        wg.Add(1)
+        go func() {
+            defer wg.Done()
+            defer func() {
+                for err := recover(); err != nil; err = recover() {
+                    fmt.Println(err)
+                }
+            }()
+
+            server()             // 与穿透客户端进行交互，长连接服务
+        }()
+        wg.Wait()
+    }
 }
 
 // 处理 TCP外网 请求
@@ -118,6 +136,7 @@ func proxyTCPServer() {
         go func(c net.Conn) {
             defer func() {
                 for err := recover();err != nil;err = recover(){
+                    fmt.Println(err)
                 }
             }()
             defer c.Close()
@@ -268,6 +287,7 @@ func server() {
         go func(c net.Conn) {
             defer func() {
                 for err := recover();err != nil;err = recover(){
+                    fmt.Println(err)
                 }
             }()
             fmt.Println("frp client尝试建立连接...")
@@ -324,6 +344,7 @@ func Read(c net.Conn) {
 func ReadStream(c net.Conn) {
     defer func() {
         for err := recover();err != nil;err = recover(){
+            fmt.Println(err)
         }
         c.Close()
     }()

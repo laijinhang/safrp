@@ -68,8 +68,8 @@ func main() {
         go func() {
             defer wg.Done()
             defer func() {
-                for v := recover();;v = recover() {
-                    fmt.Println(v)
+                for err := recover(); err != nil; err = recover() {
+                    fmt.Println(err)
                 }
             }()
             go proxyClient()
@@ -84,6 +84,7 @@ func proxyClient() {
         func() {
             defer func() {
                 for err := recover(); err != nil; err = recover() {
+                    fmt.Println(err)
                 }
             }()
 
@@ -101,6 +102,7 @@ func proxyClient() {
                         }()
                         defer func() {
                             for err := recover(); err != nil; err = recover() {
+                                fmt.Println(err)
                             }
                         }()
 
@@ -254,6 +256,7 @@ func Client() {
                 go func(d TCPData) {
                     defer func() {
                         for err := recover(); err != nil; err = recover() {
+                            fmt.Println(err)
                         }
                     }()
                     c, err := net.Dial("tcp", conf.HTTPIP+":"+conf.HTTPPort)
