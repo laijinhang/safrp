@@ -99,7 +99,7 @@ type TCPData struct {
 func main() {
     go run(proxyTCPServer)  // 处理TCP外网请求，短连接服务
     go run(proxyUDPServer)  // 处理UDP外网请求
-    go run(server)  // 处理TCP外网请求，短连接服务
+    go run(server)          // 处理TCP外网请求，短连接服务
     select {}
 }
 
@@ -115,9 +115,10 @@ func run(server func()) {
                 }
             }()
 
-            server()             // 与穿透客户端进行交互，长连接服务
+            server()
         }()
         wg.Wait()
+        time.Sleep(time.Second)
     }
 }
 
@@ -154,7 +155,7 @@ func proxyTCPServer() {
                 }
             }
 
-            tcpFromClientStream[num] = make(chan TCPData, 10)
+            tcpFromClientStream[num] = make(chan TCPData, 30)
             fmt.Println(client.RemoteAddr(), num)
             defer func() {
                ConnPool.Put(num)
@@ -200,13 +201,7 @@ func proxyUDPServer() {
 
 // 从 外网 接收TCP数据
 func ExtranetTCPRead(c net.Conn, number int) {
-    tBuf := BufPool.Get()
-    buf := []byte{}
-    if tBuf == nil {
-        buf = make([]byte, BufSize)
-    } else {
-        buf = tBuf.([]byte)
-    }
+    buf := BufPool.Get().([]byte)
     defer func() {
         BufPool.Put(buf)
     }()
@@ -219,15 +214,17 @@ func ExtranetTCPRead(c net.Conn, number int) {
         n, err := c.Read(buf)
         fmt.Println(string(buf[:n]))
         if err != nil {
-            if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
+            if _, ok := err.(net.Error); ok && err == io.EOF {
                 continue
             }
             return
         }
-        tcpToClientStream <- TCPData{
-            ConnId: number,
-            Data:   buf[:n],
-        }
+        go func(number int, buf []byte) {
+            tcpToClientStream <- TCPData{
+                ConnId: number,
+                Data:   buf,
+            }
+        }(number, buf[:n])
     }
 }
 
@@ -245,7 +242,7 @@ func ExtranetTCPSend(c net.Conn, number int) {
             }
             _, err = c.Write(data.Data)
             if err != nil {
-                if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
+                if _, ok := err.(net.Error); ok &&  err == io.EOF {
                     continue
                 }
                 close(tcpFromClientStream[number].(chan TCPData))
@@ -290,6 +287,7 @@ func server() {
                     fmt.Println(err)
                 }
             }()
+            defer c.Close()
             fmt.Println("frp client尝试建立连接...")
             buf := BufPool.Get().([]byte)
             err := c.SetReadDeadline(time.Now().Add(3 * time.Second))
@@ -327,7 +325,7 @@ func Send(c net.Conn) {
             }
             _, err = c.Write(append([]byte(strconv.Itoa(data.ConnId)+"\r\n"), data.Data...))
             if err != nil {
-                if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
+                if _, ok := err.(net.Error); ok && err == io.EOF {
                     continue
                 }
                 return
@@ -346,8 +344,8 @@ func ReadStream(c net.Conn) {
         for err := recover();err != nil;err = recover(){
             fmt.Println(err)
         }
-        c.Close()
     }()
+    defer c.Close()
     streamBuf := make([]byte, 1024 * 1024 * 8)
     streamData := make(chan []byte, 1024)
     closeConn := make(chan bool, 3)
@@ -415,7 +413,7 @@ func ReadStream(c net.Conn) {
         }
         n, err = c.Read(streamBuf)
         if err != nil {
-            if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
+            if _, ok := err.(net.Error); ok && err == io.EOF {
                 continue
             }
             closeConn <- true
