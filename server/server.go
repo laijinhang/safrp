@@ -351,79 +351,79 @@ func ReadStream(c net.Conn) {
         }
     }()
     defer c.Close()
-    streamBuf := make([]byte, 1024 * 1024 * 8)
     streamData := make(chan []byte, 1024)
     closeConn := make(chan bool, 3)
     var n int
     var err error
     go func() {
-        for {
-            select {
-            case data := <- streamData:
-                tData := bytes.Split(data, []byte("date_end;"))
-                for len(tData) != 0 {
-                    if bytes.HasSuffix(tData[0], []byte("data_end;")) { // 数据是完整的
-                        if len(tData[0]) == 10 && bytes.HasSuffix(tData[0], []byte("data_end;")) {
-                            if len(tData) == 1 {
-                                return
-                            }
-                            tData = tData[1:]
-                        }
+       for {
+           select {
+           case data := <- streamData:
+               tData := bytes.Split(data, []byte("date_end;"))
+               for len(tData) != 0 {
+                   if bytes.HasSuffix(tData[0], []byte("data_end;")) { // 数据是完整的
+                       if len(tData[0]) == 10 && bytes.HasSuffix(tData[0], []byte("data_end;")) {
+                           if len(tData) == 1 {
+                               return
+                           }
+                           tData = tData[1:]
+                       }
 
-                        tData[0] = tData[0][:len(tData[0])-9]
-                        tBuf := bytes.SplitN(tData[0], []byte("\r\n"), 2)
-                        tId := 0
-                        for i := 0; i < len(tBuf[0]); i++ {
-                            if tBuf[0][i] != '\r' && tBuf[0][i] != '\n' {
-                                tId = tId*10 + int(tBuf[0][i]-'0')
-                            }
-                        }
-                        fmt.Println("编号id：", tId)
-                        if tId > 1000 || tId < 0 {
-                            continue
-                        }
-                        go func(tId int, data TCPData) {
-                            defer func() {
-                                for err := recover();err != nil;err = recover(){
-                                }
-                            }()
-                            tcpFromClientStream[tId].(chan TCPData) <- data
-                        }(tId, TCPData{
-                            ConnId: tId,
-                            Data:   append([]byte(""), tBuf[1]...)})
-                    } else {
-                        select {
-                        case data = <- streamData:
-                            tData = bytes.SplitN(append(tData[0], data...), []byte("date_end;"), 2)
-                        case <-closeConn:
-                            return
-                        }
-                    }
-                }
-            case <-closeConn:
-                return
-            }
-        }
+                       tData[0] = tData[0][:len(tData[0])-9]
+                       tBuf := bytes.SplitN(tData[0], []byte("\r\n"), 2)
+                       tId := 0
+                       for i := 0; i < len(tBuf[0]); i++ {
+                           if tBuf[0][i] != '\r' && tBuf[0][i] != '\n' {
+                               tId = tId*10 + int(tBuf[0][i]-'0')
+                           }
+                       }
+                       fmt.Println("编号id：", tId)
+                       if tId > 1000 || tId < 0 {
+                           continue
+                       }
+                       go func(tId int, data TCPData) {
+                           defer func() {
+                               for err := recover();err != nil;err = recover(){
+                               }
+                           }()
+                           tcpFromClientStream[tId].(chan TCPData) <- data
+                       }(tId, TCPData{
+                           ConnId: tId,
+                           Data:   append([]byte(""), tBuf[1]...)})
+                   } else {
+                       select {
+                       case data = <- streamData:
+                           tData = bytes.SplitN(append(tData[0], data...), []byte("date_end;"), 2)
+                       case <-closeConn:
+                           return
+                       }
+                   }
+               }
+           case <-closeConn:
+               return
+           }
+       }
     }()
 
-    buf := BufPool.Get()
+    buf := BufPool.Get().([]byte)
     defer func() {
-        BufPool.Put(buf)
+       BufPool.Put(buf)
     }()
     for {
         err = c.SetReadDeadline(time.Now().Add(1 * time.Second))
         if err != nil {
+            fmt.Println(err)
             closeConn <- true
             return
         }
-        n, err = c.Read(streamBuf)
+        n, err = c.Read(buf)
         if err != nil {
-            if _, ok := err.(net.Error); ok && err == io.EOF {
+            if neterr, ok := err.(net.Error);ok && (neterr.Timeout() || err == io.EOF) {
                 continue
             }
             closeConn <- true
             return
         }
-        streamData <- streamBuf[:n]
+        streamData <- buf[:n]
     }
 }

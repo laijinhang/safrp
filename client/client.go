@@ -112,6 +112,7 @@ func proxyClient() {
                             time.Sleep(3 * time.Second)
                             return
                         }
+                        defer conn.Close()
                         err = conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
                         if err != nil {
                             return
@@ -163,6 +164,10 @@ func Read(c net.Conn, closeConn chan bool) {
             if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
                  continue
             }
+            if neterr, ok := err.(net.Error);true {
+                fmt.Println(neterr, ok, err, n)
+            }
+            fmt.Println(err, err == io.EOF)
             return
         }
 
@@ -249,6 +254,7 @@ func Client() {
         func() {
             defer func() {
                 for err := recover(); err != nil; err = recover() {
+                    fmt.Println(err)
                 }
             }()
             select {
