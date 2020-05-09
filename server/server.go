@@ -61,14 +61,14 @@ func (n *NumberPool)Put(v int) {
 }
 
 var conf Config
-var BufSize = 1024 * 8
+var BufSize = 1024 * 10 * 8
 
-var tcpToClientStream = make(chan TCPData, 1000)
-var tcpFromClientStream [1001]interface{}
+var tcpToClientStream = make(chan TCPData, 2000)
+var tcpFromClientStream [2001]interface{}
 
-var ConnPool = New(1000, 1)
+var ConnPool = New(2000, 1)
 var BufPool = sync.Pool{New: func() interface{} {return make([]byte, BufSize)}}
-var DeadTime = make([]chan interface{}, 1001)
+var DeadTime = make([]chan interface{}, 2001)
 
 func init() {
     for i := 1;i <= 1000;i++ {
@@ -206,8 +206,9 @@ func ExtranetTCPRead(c net.Conn, number int) {
         BufPool.Put(buf)
     }()
 
+    deadTime := time.Now().Unix()
     for {
-        err := c.SetReadDeadline(time.Now().Add(3 * time.Second))
+        err := c.SetReadDeadline(time.Now().Add(1 * time.Second))
         if err != nil {
             return
         }
@@ -215,10 +216,14 @@ func ExtranetTCPRead(c net.Conn, number int) {
         fmt.Println(string(buf[:n]))
         if err != nil {
             if _, ok := err.(net.Error); ok && err == io.EOF {
+                if time.Now().Unix() - deadTime > 3 {
+                    return
+                }
                 continue
             }
             return
         }
+        deadTime = time.Now().Unix()
         go func(number int, buf []byte) {
             tcpToClientStream <- TCPData{
                 ConnId: number,
