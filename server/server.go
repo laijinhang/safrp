@@ -160,6 +160,7 @@ func proxyTCPServer() {
             defer func() {
                ConnPool.Put(num)
                c.Close()
+                close(tcpFromClientStream[num].(chan TCPData))
             }()
             go ExtranetTCPRead(c, num)
             ExtranetTCPSend(c, num)
@@ -250,7 +251,6 @@ func ExtranetTCPSend(c net.Conn, number int) {
                 if _, ok := err.(net.Error); ok &&  err == io.EOF {
                     continue
                 }
-                close(tcpFromClientStream[number].(chan TCPData))
                 return
             }
             BeginTime = time.Now().Unix()
