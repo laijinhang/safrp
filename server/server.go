@@ -156,7 +156,7 @@ func proxyTCPServer() {
             }
 
             tcpFromClientStream[num] = make(chan TCPData, 30)
-            fmt.Println(client.RemoteAddr(), num)
+            fmt.Println("请求：", client.RemoteAddr(), num)
             defer func() {
                ConnPool.Put(num)
                c.Close()
@@ -214,7 +214,6 @@ func ExtranetTCPRead(c net.Conn, number int) {
             return
         }
         n, err := c.Read(buf)
-        fmt.Println(string(buf[:n]))
         if err != nil {
             if _, ok := err.(net.Error); ok && err == io.EOF {
                 if time.Now().Unix() - deadTime > 3 {
@@ -224,10 +223,18 @@ func ExtranetTCPRead(c net.Conn, number int) {
             }
             return
         }
+        fmt.Println(string(buf[:n]))
+        //// 如果不是HTTP协议，直接过滤掉
+        //_, protocol := common.TCPApplicationLayerProtocolIdentification(buf[:n])
+        //if protocol == "TCP" {
+        //    fmt.Println("TCP")
+        //    return
+        //}
+        //fmt.Println(protocol)
         deadTime = time.Now().Unix()
         tcpToClientStream <- TCPData{
             ConnId: number,
-            Data:   buf,
+            Data:   buf[:n],
         }
     }
 }
@@ -384,12 +391,13 @@ func ReadStream(c net.Conn) {
                                for err := recover();err != nil;err = recover(){
                                }
                            }()
-                           if ConnPool.numberArr[tId] == 1 {
+                           if atomic.LoadUint64(&ConnPool.numberArr[tId]) == 1 {
                                tcpFromClientStream[tId].(chan TCPData) <- data
                            }
+
                        }(tId, TCPData{
                            ConnId: tId,
-                           Data:   append([]byte(""), tBuf[1]...)})
+                           Data:   bytes.TrimSuffix(tBuf[1], []byte("date_end;"))})
                    } else {
                        select {
                        case data = <- streamData:

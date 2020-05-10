@@ -96,6 +96,7 @@ func proxyClient() {
             for {
                 select {
                 case <-connNum:
+                    time.Sleep(3 * time.Second) // 缓慢启动和重启，防突然启动不可连接，导致CPU温度飙升
                     go func() {
                         defer func() {
                             connNum <- true
@@ -164,10 +165,6 @@ func Read(c net.Conn, closeConn chan bool) {
             if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
                  continue
             }
-            if neterr, ok := err.(net.Error);true {
-                fmt.Println(neterr, ok, err, n)
-            }
-            fmt.Println(err, err == io.EOF)
             return
         }
 
@@ -177,11 +174,11 @@ func Read(c net.Conn, closeConn chan bool) {
         }
         tId := 0
         for i := 0;i < len(tBuf[0]);i++ {
-            fmt.Println(tBuf[0])
             if tBuf[0][i] != '\r' && tBuf[0][i] != '\n' {
                 tId = tId * 10 + int(tBuf[0][i] - '0')
             }
         }
+        fmt.Println("从safrp服务端", c.RemoteAddr(), "读取到数据,tId:", tId, ",data:", len(tBuf[1]))
         tcpFromServerStream <- TCPData{
             ConnId: tId,
             Data:   tBuf[1],
@@ -223,6 +220,7 @@ func Send(c net.Conn, closeConn chan bool) {
             if err != nil {
                 return
             }
+            fmt.Println("往safrp服务端", c.RemoteAddr(), "发送数据")
             _, err = c.Write(append([]byte(strconv.Itoa(data.ConnId) + "\r\n"), append(data.Data, []byte("data_end;")...)...))
             if err != nil {
                 if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
@@ -236,6 +234,7 @@ func Send(c net.Conn, closeConn chan bool) {
            if err != nil {
                return
            }
+            fmt.Println("往safrp服务端", c.RemoteAddr(), "发送心跳包")
            _, err = c.Write(hb)
            if err != nil {
                if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
@@ -286,6 +285,7 @@ func IntranetTransmitRead(c net.Conn, cId int) {
         if err != nil {
             return
         }
+        fmt.Println("读取响应")
         n, err := c.Read(buf)
         if n == 0 {
             if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
