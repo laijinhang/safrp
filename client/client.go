@@ -7,6 +7,7 @@ import (
     "io"
     "log"
     "net"
+    "safrp/common"
     "strconv"
     "sync"
     "time"
@@ -22,9 +23,13 @@ type Config struct {
 
 var conf Config
 var BufSize = 1024 * 10 * 8
+var TCPDataEnd = []byte("data_end;")
 
 var tcpToServerStream = make(chan TCPData, 1000)
 var tcpFromServerStream = make(chan TCPData, 1000)
+var steamChan = make(chan []byte, 1000)
+var dataChan = make(chan []byte, 1000)
+var httpClient = [2001]common.HTTPClient{}
 
 type TCPData struct {
     ConnId int
@@ -63,13 +68,21 @@ func init() {
 
 func main() {
     wg := sync.WaitGroup{}
+    go func() {
+        defer func() {
+            for p := recover();p != nil;p = recover() {
+                fmt.Println(p)
+            }
+        }()
+        common.TCPStream(steamChan, dataChan, TCPDataEnd)
+    }()
     for {
         wg.Add(1)
         go func() {
             defer wg.Done()
             defer func() {
-                for err := recover(); err != nil; err = recover() {
-                    fmt.Println(err)
+                for p := recover();p != nil;p = recover() {
+                    fmt.Println(p)
                 }
             }()
             go proxyClient()
@@ -83,8 +96,8 @@ func proxyClient() {
     for {
         func() {
             defer func() {
-                for err := recover(); err != nil; err = recover() {
-                    fmt.Println(err)
+                for p := recover();p != nil;p = recover() {
+                    fmt.Println(p)
                 }
             }()
 
@@ -102,8 +115,8 @@ func proxyClient() {
                             connNum <- true
                         }()
                         defer func() {
-                            for err := recover(); err != nil; err = recover() {
-                                fmt.Println(err)
+                            for p := recover();p != nil;p = recover() {
+                                fmt.Println(p)
                             }
                         }()
 
@@ -155,6 +168,45 @@ func Read(c net.Conn, closeConn chan bool) {
     defer func() {
         BufPool.Put(buf)
     }()
+    go func() {
+        defer func() {
+            for p := recover();p != nil;p = recover() {
+                fmt.Println(p)
+            }
+        }()
+        for {
+            select {
+            case buf := <-dataChan:
+                tBuf := bytes.SplitN(buf, []byte("\r\n"), 2)
+                if len(tBuf) == 1 {
+                    continue
+                }
+                tId := 0
+                temp := bytes.Split(tBuf[0], []byte{' '})
+                for i := 0;i < len(temp[1]);i++ {
+                    if tBuf[0][i] != '\r' && tBuf[0][i] != '\n' {
+                        tId = tId * 10 + int(tBuf[0][i] - '0')
+                    }
+                }
+                fmt.Println("从safrp服务端", c.RemoteAddr(), "读取到数据,IP：" + string(temp[0]) + ",tId:", tId, ",data:", len(tBuf[1]))
+
+                if len(tBuf[1]) == 0 {
+                    fmt.Println("编号：", tId, "断开。。。")
+                    httpClient[tId].Addr = ""
+                    httpClient[tId].Conn = nil
+                    continue
+                }
+                if httpClient[tId].Addr != string(temp[0]) {
+                    httpClient[tId].Addr = string(temp[0])
+                }
+                tcpFromServerStream <- TCPData{
+                    ConnId: tId,
+                    Data:   append([]byte{
+                    }, tBuf[1]...),
+                }
+            }
+        }
+    }()
     for {
         err := c.SetReadDeadline(time.Now().Add(3 * time.Second))
         if err != nil {
@@ -168,21 +220,7 @@ func Read(c net.Conn, closeConn chan bool) {
             return
         }
 
-        tBuf := bytes.SplitN(buf[:n], []byte("\r\n"), 2)
-        if len(tBuf) == 1 {
-            continue
-        }
-        tId := 0
-        for i := 0;i < len(tBuf[0]);i++ {
-            if tBuf[0][i] != '\r' && tBuf[0][i] != '\n' {
-                tId = tId * 10 + int(tBuf[0][i] - '0')
-            }
-        }
-        fmt.Println("从safrp服务端", c.RemoteAddr(), "读取到数据,tId:", tId, ",data:", len(tBuf[1]))
-        tcpFromServerStream <- TCPData{
-            ConnId: tId,
-            Data:   tBuf[1],
-        }
+        steamChan <- buf[:n]
     }
 }
 
@@ -201,7 +239,7 @@ func Send(c net.Conn, closeConn chan bool) {
                return
            default:
                if time.Now().Unix() - BeginTime >= int64(3 * 60) { // 如果三分钟里，没有发送过数据，则发送心跳包
-                   HeartbeatB <- append([]byte("1"), []byte("data_end;")...)
+                   HeartbeatB <- append([]byte("1"),TCPDataEnd...)
                    BeginTime = time.Now().Unix()
                }
                time.Sleep(1 * time.Second) // 使用休眠，CPU回到了12%左右，温度回归到正常58度上下
@@ -221,7 +259,7 @@ func Send(c net.Conn, closeConn chan bool) {
                 return
             }
             fmt.Println("往safrp服务端", c.RemoteAddr(), "发送数据")
-            _, err = c.Write(append([]byte(strconv.Itoa(data.ConnId) + "\r\n"), append(data.Data, []byte("data_end;")...)...))
+            _, err = c.Write(append([]byte(strconv.Itoa(data.ConnId) + "\r\n"), append(data.Data, TCPDataEnd...)...))
             if err != nil {
                 if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
                     continue
@@ -252,8 +290,8 @@ func Client() {
     for {
         func() {
             defer func() {
-                for err := recover(); err != nil; err = recover() {
-                    fmt.Println(err)
+                for p := recover();p != nil;p = recover() {
+                    fmt.Println(p)
                 }
             }()
             select {
@@ -264,64 +302,14 @@ func Client() {
                             fmt.Println(err)
                         }
                     }()
-                    c, err := net.Dial("tcp", conf.HTTPIP+":"+conf.HTTPPort)
-                    fmt.Println(err)
-                    if err != nil {
-                        return
+                    go httpClient[d.ConnId].Write(d.Data)
+                    buf, _ := httpClient[d.ConnId].Read()
+                    tcpToServerStream <- TCPData{
+                        ConnId: d.ConnId,
+                        Data:   buf,
                     }
-                    go IntranetTransmitSend(c, d.Data)
-                    IntranetTransmitRead(c, d.ConnId)
                 }(data)
             }
         }()
-    }
-}
-
-// 从 内网服务器 读数据
-func IntranetTransmitRead(c net.Conn, cId int) {
-    buf := make([]byte, BufSize)
-    for {
-        err := c.SetReadDeadline(time.Now().Add(2 * time.Second))
-        if err != nil {
-            return
-        }
-        fmt.Println("读取响应")
-        n, err := c.Read(buf)
-        if n == 0 {
-            if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
-                continue
-            }
-            return
-        }
-        tcpToServerStream <- TCPData{
-            ConnId: cId,
-            Data:   buf[:n],
-        }
-        return
-    }
-    return
-}
-
-// 往 内网服务器 发数据
-func IntranetTransmitSend(c net.Conn, data []byte) {
-    fmt.Println("请求服务")
-    //tBuf := bytes.SplitN(data, []byte("\r\n"), 3)
-    //
-    //tBuf[1] = []byte("Host: " + conf.HTTPIP)
-    //if conf.HTTPPort != "80" {
-    //   tBuf[1] = append(tBuf[1], []byte(":" + conf.HTTPPort)...)
-    //}
-    //data = bytes.Join(tBuf, []byte("\r\n"))
-    //fmt.Println(string(data))
-    //data = bytes.Replace(data, []byte(conf.ServerIP + ":10000"), []byte(conf.HTTPIP), 3)
-    //fmt.Println(string(data))
-    err := c.SetWriteDeadline(time.Now().Add(2 * time.Second))
-    if err != nil {
-        fmt.Println(err)
-        return
-    }
-    _, err = c.Write(data)
-    if err != nil {
-        fmt.Println(err)
     }
 }
