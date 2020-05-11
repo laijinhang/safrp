@@ -7,6 +7,7 @@ import (
     "io"
     "log"
     "net"
+    "safrp/common"
     "strconv"
     "sync"
     "sync/atomic"
@@ -62,6 +63,7 @@ func (n *NumberPool)Put(v int) {
 
 var conf Config
 var BufSize = 1024 * 10 * 8
+var TCPDataEnd = []byte("data_end;")
 
 var tcpToClientStream = make(chan TCPData, 10000)
 var tcpFromClientStream [2001]interface{}
@@ -159,8 +161,12 @@ func proxyTCPServer() {
             tcpFromClientStream[num] = make(chan TCPData, 30)
             fmt.Println("请求：", client.RemoteAddr(), num)
             defer func() {
-               ConnPool.Put(num)
-               c.Close()
+                tcpToClientStream <- TCPData{
+                    ConnId: num,
+                    Data:   common.SafrpTCPPackage([]byte(""), TCPDataEnd),
+                }
+                ConnPool.Put(num)
+                c.Close()
                 close(tcpFromClientStream[num].(chan TCPData))
             }()
             go ExtranetTCPRead(c, num)
@@ -334,7 +340,7 @@ func Send(c net.Conn) {
             if err != nil {
                 return
             }
-            _, err = c.Write(append([]byte(strconv.Itoa(data.ConnId)+"\r\n"), data.Data...))
+            _, err = c.Write(append([]byte(c.RemoteAddr().String() + " "+strconv.Itoa(data.ConnId)+"\r\n"), data.Data...))
             if err != nil {
                 if _, ok := err.(net.Error); ok && err == io.EOF {
                     continue
