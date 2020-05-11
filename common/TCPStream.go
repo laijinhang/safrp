@@ -2,7 +2,6 @@ package common
 
 import (
 	"bytes"
-	"fmt"
 )
 
 /*
@@ -29,7 +28,6 @@ func TCPStream(stream, data chan []byte, end []byte) {
 				}
 				for i := 0;i < l;i++ {
 					go func(buf []byte) {
-						fmt.Println(string(buf))
 						data <- buf
 					}(tempBuf[i])
 				}

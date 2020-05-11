@@ -304,7 +304,11 @@ func Client() {
                         }
                     }()
                     httpClient[d.ConnId].Write(d.Data)
-                    buf, _ := httpClient[d.ConnId].Read()
+                    buf, err := httpClient[d.ConnId].Read()
+                    if err != nil {
+                        fmt.Println(err)
+                        return
+                    }
                     tcpToServerStream <- TCPData{
                         ConnId: d.ConnId,
                         Data:   buf,

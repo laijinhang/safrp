@@ -99,7 +99,13 @@ type TCPData struct {
     Data []byte
 }
 
+var steamChan = make(chan []byte, 1000)
+var dataChan = make(chan []byte, 1000)
+
 func main() {
+    go run(func() {
+        common.TCPStream(steamChan, dataChan, TCPDataEnd)
+    })
     go run(proxyTCPServer)  // 处理TCP外网请求，短连接服务
     go run(proxyUDPServer)  // 处理UDP外网请求
     go run(server)          // 处理TCP外网请求，短连接服务
@@ -256,12 +262,13 @@ func ExtranetTCPSend(c net.Conn, number int) {
         select {
         case data := <- tcpFromClientStream[number].(chan TCPData):
             err := c.SetWriteDeadline(time.Now().Add(3 * time.Second))
+
             if err != nil {
                 continue
             }
             _, err = c.Write(data.Data)
             if err != nil {
-                if _, ok := err.(net.Error); ok &&  err == io.EOF {
+                if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
                     continue
                 }
                 return
@@ -359,69 +366,96 @@ func Read(c net.Conn) {
 
 func ReadStream(c net.Conn) {
     defer func() {
-        for err := recover();err != nil;err = recover(){
+        for err := recover(); err != nil; err = recover() {
             fmt.Println(err)
         }
     }()
     defer c.Close()
-    streamData := make(chan []byte, 1024)
     closeConn := make(chan bool, 3)
     var n int
     var err error
-    go func() {
-       for {
-           select {
-           case data := <- streamData:
-               tData := bytes.Split(data, TCPDataEnd)
-               for len(tData) != 0 {
-                   if len(tData[0]) == 0 {
-                       tData = tData[1:]
-                       continue
-                   }
-                   if len(tData) > 1 || (len(tData) == 1 && bytes.HasSuffix(data, TCPDataEnd)) { // 数据是完整的
-                       if len(tData[0]) == 1 {  // 心跳包
-                           tData = tData[1:]
-                            continue
-                       }
-                       tBuf := bytes.SplitN(tData[0], []byte("\r\n"), 2)
-                       tId := 0
-                       for i := 0; i < len(tBuf[0]); i++ {
-                           tId = tId*10 + int(tBuf[0][i]-'0')
-                       }
-                       if tId > maxNum || tId < 0 {
-                           continue
-                       }
-                       fmt.Println("编号id：", tId)
-                       go func(tId int, data TCPData) {
-                           defer func() {
-                               for err := recover();err != nil;err = recover(){
-                               }
-                           }()
-                           if atomic.LoadUint64(&ConnPool.numberArr[tId]) == 1 {
-                               tcpFromClientStream[tId].(chan TCPData) <- data
-                           }
-                       }(tId, TCPData{
-                           ConnId: tId,
-                           Data:   tBuf[1]})
-                       tData = tData[1:]
-                   } else {
-                       select {
-                       case data = <- streamData:
-                           tData = bytes.Split(append(tData[0], data...), TCPDataEnd)
-                       case <-closeConn:
-                           return
-                       }
-                   }
-               }
-           case <-closeConn:
-               return
-           }
-       }
-    }()
+    //go func() {
+    //   for {
+    //       select {
+    //       case data := <- streamData:
+    //           tData := bytes.SplitN(data, TCPDataEnd, 2)
+    //           for len(tData) != 0 {
+    //               if len(tData[0]) == 0 {
+    //                   tData = tData[1:]
+    //                   continue
+    //               }
+    //               if len(tData) > 1 || (len(tData) == 1 && bytes.HasSuffix(data, TCPDataEnd)) { // 数据是完整的
+    //                   if len(tData[0]) == 1 {  // 心跳包
+    //                       tData = tData[1:]
+    //                        continue
+    //                   }
+    //                   tBuf := bytes.SplitN(tData[0], []byte("\r\n"), 2)
+    //                   tId := 0
+    //                   for i := 0; i < len(tBuf[0]); i++ {
+    //                       tId = tId*10 + int(tBuf[0][i]-'0')
+    //                   }
+    //                   if tId > maxNum || tId < 0 {
+    //                       continue
+    //                   }
+    //                   fmt.Println("编号id：", tId)
+    //                   go func(tId int, data TCPData) {
+    //                       defer func() {
+    //                           for err := recover();err != nil;err = recover(){
+    //                           }
+    //                       }()
+    //                       if atomic.LoadUint64(&ConnPool.numberArr[tId]) == 1 {
+    //                           tcpFromClientStream[tId].(chan TCPData) <- data
+    //                       }
+    //                   }(tId, TCPData{
+    //                       ConnId: tId,
+    //                       Data:   tBuf[1]})
+    //                   tData = tData[1:]
+    //               } else {
+    //                   select {
+    //                   case data = <- streamData:
+    //                       tData = bytes.SplitN(append(tData[0], data...), TCPDataEnd, 2)
+    //                   case <-closeConn:
+    //                       return
+    //                   }
+    //               }
+    //           }
+    //       case <-closeConn:
+    //           return
+    //       }
+    //   }
+    //}()
 
     buf := BufPool.Get().([]byte)
     defer func() {
-       BufPool.Put(buf)
+        BufPool.Put(buf)
+    }()
+    go func() {
+        defer func() {
+            for p := recover(); p != nil; p = recover() {
+                fmt.Println(p)
+            }
+        }()
+        for {
+            select {
+            case buf := <-dataChan:
+                if len(buf) == 1 {  // 心跳包
+                    continue
+                }
+                tBuf := bytes.SplitN(buf, []byte("\r\n"), 2)
+                tId := 0
+                for i := 0; i < len(tBuf[0]); i++ {
+                    if tBuf[0][i] != '\r' && tBuf[0][i] != '\n' {
+                        tId = tId*10 + int(tBuf[0][i]-'0')
+                    }
+                }
+                if atomic.LoadUint64(&ConnPool.numberArr[tId]) == 1 {
+                    tcpFromClientStream[tId].(chan TCPData) <- TCPData{
+                        ConnId: tId,
+                        Data:   tBuf[1],
+                    }
+                }
+            }
+        }
     }()
     for {
         err = c.SetReadDeadline(time.Now().Add(1 * time.Second))
@@ -438,6 +472,6 @@ func ReadStream(c net.Conn) {
             closeConn <- true
             return
         }
-        streamData <- buf[:n]
+        steamChan <- buf[:n]
     }
 }
