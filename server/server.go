@@ -163,7 +163,7 @@ func proxyTCPServer() {
             defer func() {
                 tcpToClientStream <- TCPData{
                     ConnId: num,
-                    Data:   common.SafrpTCPPackage([]byte(""), TCPDataEnd),
+                    Data:   []byte(""),
                 }
                 ConnPool.Put(num)
                 c.Close()
@@ -222,8 +222,8 @@ func ExtranetTCPRead(c net.Conn, number int) {
         }
         n, err := c.Read(buf)
         if err != nil {
-            if _, ok := err.(net.Error); ok && err == io.EOF {
-                if time.Now().Unix() - deadTime > 3 {
+            if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
+                if time.Now().Unix() - deadTime > 5 {
                     return
                 }
                 continue
@@ -239,9 +239,10 @@ func ExtranetTCPRead(c net.Conn, number int) {
         //}
         //fmt.Println(protocol)
         deadTime = time.Now().Unix()
+
         tcpToClientStream <- TCPData{
             ConnId: number,
-            Data:   buf[:n],
+            Data:   append([]byte(c.RemoteAddr().String() + " " + strconv.Itoa(number) + "\r\n"), buf[:n]...),
         }
     }
 }
@@ -267,7 +268,7 @@ func ExtranetTCPSend(c net.Conn, number int) {
             }
             BeginTime = time.Now().Unix()
         default:
-            if time.Now().Unix() - BeginTime >= int64(6) {
+            if time.Now().Unix() - BeginTime >= int64(12) {
                 c.Close()
                 return
             }
@@ -340,7 +341,7 @@ func Send(c net.Conn) {
             if err != nil {
                 return
             }
-            _, err = c.Write(append([]byte(c.RemoteAddr().String() + " "+strconv.Itoa(data.ConnId)+"\r\n"), data.Data...))
+            _, err = c.Write(common.SafrpTCPPackage(data.Data, TCPDataEnd))
             if err != nil {
                 if _, ok := err.(net.Error); ok && err == io.EOF {
                     continue
@@ -371,24 +372,21 @@ func ReadStream(c net.Conn) {
        for {
            select {
            case data := <- streamData:
-               tData := bytes.Split(data, []byte("date_end;"))
+               tData := bytes.Split(data, TCPDataEnd)
                for len(tData) != 0 {
-                   if bytes.HasSuffix(tData[0], []byte("data_end;")) { // 数据是完整的
-                       if len(tData[0]) == 10 && bytes.HasSuffix(tData[0], []byte("data_end;")) {
-                           if len(tData) == 1 {
-                               return
-                           }
+                   if len(tData[0]) == 0 {
+                       tData = tData[1:]
+                       continue
+                   }
+                   if len(tData) > 1 || (len(tData) == 1 && bytes.HasSuffix(data, TCPDataEnd)) { // 数据是完整的
+                       if len(tData[0]) == 1 {  // 心跳包
                            tData = tData[1:]
-                           continue
+                            continue
                        }
-
-                       tData[0] = tData[0][:len(tData[0])-9]
                        tBuf := bytes.SplitN(tData[0], []byte("\r\n"), 2)
                        tId := 0
                        for i := 0; i < len(tBuf[0]); i++ {
-                           if tBuf[0][i] != '\r' && tBuf[0][i] != '\n' {
-                               tId = tId*10 + int(tBuf[0][i]-'0')
-                           }
+                           tId = tId*10 + int(tBuf[0][i]-'0')
                        }
                        if tId > maxNum || tId < 0 {
                            continue
@@ -402,14 +400,14 @@ func ReadStream(c net.Conn) {
                            if atomic.LoadUint64(&ConnPool.numberArr[tId]) == 1 {
                                tcpFromClientStream[tId].(chan TCPData) <- data
                            }
-
                        }(tId, TCPData{
                            ConnId: tId,
-                           Data:   bytes.TrimSuffix(tBuf[1], []byte("date_end;"))})
+                           Data:   tBuf[1]})
+                       tData = tData[1:]
                    } else {
                        select {
                        case data = <- streamData:
-                           tData = bytes.SplitN(append(tData[0], data...), []byte("date_end;"), 2)
+                           tData = bytes.Split(append(tData[0], data...), TCPDataEnd)
                        case <-closeConn:
                            return
                        }

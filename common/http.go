@@ -22,10 +22,14 @@ type HTTPClient struct {
 /*
 创建连接
  */
-func (c *HTTPClient)Dail(
-
-	)  {
-	
+func (c *HTTPClient)Dail(address string) (err error) {
+	c.Conn, err = net.Dial("tcp", address)
+	if err != nil {
+		c.close = true
+	} else {
+		c.close = false
+	}
+	return
 }
 
 /*

@@ -1,6 +1,9 @@
 package common
 
-import "bytes"
+import (
+	"bytes"
+	"fmt"
+)
 
 /*
 解析safrp服务端与safrp客户端之间的TCP数据流解析
@@ -26,6 +29,7 @@ func TCPStream(stream, data chan []byte, end []byte) {
 				}
 				for i := 0;i < l;i++ {
 					go func(buf []byte) {
+						fmt.Println(string(buf))
 						data <- buf
 					}(tempBuf[i])
 				}

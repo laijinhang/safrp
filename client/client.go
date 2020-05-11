@@ -198,6 +198,7 @@ func Read(c net.Conn, closeConn chan bool) {
                 }
                 if httpClient[tId].Addr != string(temp[0]) {
                     httpClient[tId].Addr = string(temp[0])
+                    httpClient[tId].Dail(conf.HTTPIP + ":" + conf.HTTPPort)
                 }
                 tcpFromServerStream <- TCPData{
                     ConnId: tId,
@@ -258,8 +259,8 @@ func Send(c net.Conn, closeConn chan bool) {
             if err != nil {
                 return
             }
-            fmt.Println("往safrp服务端", c.RemoteAddr(), "发送数据")
-            _, err = c.Write(append([]byte(strconv.Itoa(data.ConnId) + "\r\n"), append(data.Data, TCPDataEnd...)...))
+            fmt.Println("往safrp服务端", c.RemoteAddr(), "发送数据:", len(data.Data))
+            _, err = c.Write(append([]byte(strconv.Itoa(data.ConnId) + "\r\n"), common.SafrpTCPPackage(data.Data, TCPDataEnd)...))
             if err != nil {
                 if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
                     continue
@@ -302,7 +303,7 @@ func Client() {
                             fmt.Println(err)
                         }
                     }()
-                    go httpClient[d.ConnId].Write(d.Data)
+                    httpClient[d.ConnId].Write(d.Data)
                     buf, _ := httpClient[d.ConnId].Read()
                     tcpToServerStream <- TCPData{
                         ConnId: d.ConnId,
