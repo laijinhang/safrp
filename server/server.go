@@ -65,6 +65,7 @@ var BufSize = 1024 * 10 * 8
 
 var tcpToClientStream = make(chan TCPData, 10000)
 var tcpFromClientStream [2001]interface{}
+var maxNum = 2000
 
 var ConnPool = New(2000, 1)
 var BufPool = sync.Pool{New: func() interface{} {return make([]byte, BufSize)}}
@@ -372,6 +373,7 @@ func ReadStream(c net.Conn) {
                                return
                            }
                            tData = tData[1:]
+                           continue
                        }
 
                        tData[0] = tData[0][:len(tData[0])-9]
@@ -382,10 +384,10 @@ func ReadStream(c net.Conn) {
                                tId = tId*10 + int(tBuf[0][i]-'0')
                            }
                        }
-                       fmt.Println("编号id：", tId)
-                       if tId > 1000 || tId < 0 {
+                       if tId > maxNum || tId < 0 {
                            continue
                        }
+                       fmt.Println("编号id：", tId)
                        go func(tId int, data TCPData) {
                            defer func() {
                                for err := recover();err != nil;err = recover(){
