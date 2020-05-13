@@ -2,10 +2,9 @@ package main
 
 import (
     "bytes"
-    "fmt"
+    "github.com/sirupsen/logrus"
     "gopkg.in/ini.v1"
     "io"
-    "log"
     "net"
     "safrp/common"
     "strconv"
@@ -58,12 +57,13 @@ func (n *NumberPool)Get() (uint64, bool) {
 }
 
 func (n *NumberPool)Put(v int) {
-    atomic.CompareAndSwapUint64(&n.numberArr[v], 1, 0)
+    logrus.Infoln(v)
+    logrus.Infoln(atomic.CompareAndSwapUint64(&n.numberArr[v], 1, 0))
 }
 
 var conf Config
-var BufSize = 1024 * 10 * 8
-var TCPDataEnd = []byte("data_end;")
+var BufSize = 1024 * 1024 * 8
+var TCPDataEnd = []byte{'<','e','>'}
 
 var tcpToClientStream = make(chan TCPData, 10000)
 var tcpFromClientStream [2001]interface{}
@@ -75,12 +75,11 @@ var DeadTime = make([]chan interface{}, 2001)
 
 func init() {
     for i := 1;i <= 1000;i++ {
-        ConnPool.Put(i)
         tcpFromClientStream[i] = make(chan TCPData, 10)
     }
     cfg, err := ini.Load("./safrp.ini")
     if err != nil {
-        log.Fatal("Fail to read file: ", err)
+        logrus.Panicln("Fail to read file: ", err)
     }
     temp, _ :=cfg.Section("server").GetKey("ip")
     conf.ServerIP = temp.String()
@@ -92,6 +91,21 @@ func init() {
     conf.SafrpPort = temp.String()
     temp, _ =cfg.Section("").GetKey("password")
     conf.Password = temp.String()
+
+
+    logrus.SetLevel(logrus.TraceLevel)
+    logrus.SetFormatter(&logrus.TextFormatter{
+        ForceColors:               true,
+        FullTimestamp:             true,
+        TimestampFormat:           "2006-01-02 15:04:05",
+        DisableSorting:            false,
+        SortingFunc:               nil,
+        DisableLevelTruncation:    true,
+        QuoteEmptyFields:          false,
+        FieldMap:                  nil,
+        CallerPrettyfier:          nil,
+    })
+    logrus.SetReportCaller(true)
 }
 
 type TCPData struct {
@@ -99,42 +113,17 @@ type TCPData struct {
     Data []byte
 }
 
-var steamChan = make(chan []byte, 1000)
-var dataChan = make(chan []byte, 1000)
-
 func main() {
-    go run(func() {
-        common.TCPStream(steamChan, dataChan, TCPDataEnd)
-    })
-    go run(proxyTCPServer)  // 处理TCP外网请求，短连接服务
-    go run(proxyUDPServer)  // 处理UDP外网请求
-    go run(server)          // 处理TCP外网请求，短连接服务
+    go common.Run(proxyTCPServer)  // 处理TCP外网请求，短连接服务
+    go common.Run(proxyUDPServer)  // 处理UDP外网请求
+    go common.Run(server)          // 处理TCP外网请求，短连接服务
     select {}
-}
-
-func run(server func()) {
-    wg := sync.WaitGroup{}
-    for {
-        wg.Add(1)
-        go func() {
-            defer wg.Done()
-            defer func() {
-                for err := recover(); err != nil; err = recover() {
-                    fmt.Println(err)
-                }
-            }()
-
-            server()
-        }()
-        wg.Wait()
-        time.Sleep(time.Second)
-    }
 }
 
 // 处理 TCP外网 请求
 func proxyTCPServer() {
     listen, err := net.Listen("tcp", conf.ServerIP + ":" + conf.ServerTCPPort)
-    fmt.Println("listen :" + conf.ServerIP + ":" + conf.ServerTCPPort + " ...")
+    logrus.Infoln("listen :" + conf.ServerIP + ":" + conf.ServerTCPPort + " ...")
     if err != nil {
         panic(err)
     }
@@ -145,8 +134,8 @@ func proxyTCPServer() {
         }
         go func(c net.Conn) {
             defer func() {
-                for err := recover();err != nil;err = recover(){
-                    fmt.Println(err)
+                for p := recover();p != nil;p = recover(){
+                    logrus.Errorln(p)
                 }
             }()
             defer c.Close()
@@ -165,7 +154,7 @@ func proxyTCPServer() {
             }
 
             tcpFromClientStream[num] = make(chan TCPData, 30)
-            fmt.Println("请求：", client.RemoteAddr(), num)
+            logrus.Infoln("请求：", client.RemoteAddr(), num)
             defer func() {
                 tcpToClientStream <- TCPData{
                     ConnId: num,
@@ -222,12 +211,14 @@ func ExtranetTCPRead(c net.Conn, number int) {
 
     deadTime := time.Now().Unix()
     for {
-        err := c.SetReadDeadline(time.Now().Add(1 * time.Second))
+        err := c.SetReadDeadline(time.Now().Add(12 * time.Second))
         if err != nil {
+            logrus.Errorln(err)
             return
         }
         n, err := c.Read(buf)
         if err != nil {
+            logrus.Errorln(err)
             if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
                 if time.Now().Unix() - deadTime > 5 {
                     return
@@ -236,14 +227,6 @@ func ExtranetTCPRead(c net.Conn, number int) {
             }
             return
         }
-        fmt.Println(string(buf[:n]))
-        //// 如果不是HTTP协议，直接过滤掉
-        //_, protocol := common.TCPApplicationLayerProtocolIdentification(buf[:n])
-        //if protocol == "TCP" {
-        //    fmt.Println("TCP")
-        //    return
-        //}
-        //fmt.Println(protocol)
         deadTime = time.Now().Unix()
 
         tcpToClientStream <- TCPData{
@@ -261,19 +244,23 @@ func ExtranetTCPSend(c net.Conn, number int) {
     for {
         select {
         case data := <- tcpFromClientStream[number].(chan TCPData):
+            logrus.Infoln(string(data.Data))
             err := c.SetWriteDeadline(time.Now().Add(3 * time.Second))
 
             if err != nil {
+                logrus.Errorln(err)
                 continue
             }
             _, err = c.Write(data.Data)
             if err != nil {
+                logrus.Errorln(err)
                 if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
                     continue
                 }
                 return
             }
             BeginTime = time.Now().Unix()
+            return
         default:
             if time.Now().Unix() - BeginTime >= int64(12) {
                 c.Close()
@@ -296,45 +283,70 @@ func ExtranetUDPSend(c net.Conn, number int) {
 // 处理穿透内网服务
 func server() {
     listen, err := net.Listen("tcp", ":"+ conf.SafrpPort)
-    fmt.Println("safrp server listen :" + conf.SafrpPort + " ...")
+    logrus.Infoln("safrp server listen :" + conf.SafrpPort + " ...")
     if err != nil {
-        panic(err)
+        logrus.Panicln(err)
     }
     for {
         client, err := listen.Accept()
         if err != nil {
-            fmt.Println(err)
+            logrus.Errorln(err)
             continue
         }
         go func(c net.Conn) {
             defer func() {
-                for err := recover();err != nil;err = recover(){
-                    fmt.Println(err)
+                for p := recover();p != nil;p = recover(){
+                    logrus.Panicln(p)
                 }
             }()
             defer c.Close()
-            fmt.Println("frp client尝试建立连接...")
+            logrus.Infoln("frp client尝试建立连接...")
             buf := BufPool.Get().([]byte)
             err := c.SetReadDeadline(time.Now().Add(3 * time.Second))
             if err != nil {
-                fmt.Println("password error...")
+                logrus.Infoln("password error...")
                 return
             }
             n, err := c.Read(buf)
             if err != nil || string(buf[:n]) != conf.Password {
-                fmt.Println("password error...")
+                logrus.Infoln("password error...")
                 return
             }
-            defer fmt.Println("safrp client " + c.RemoteAddr().String() + " close ...")
+            defer logrus.Infoln("safrp client " + c.RemoteAddr().String() + " close ...")
             err = c.SetWriteDeadline(time.Now().Add(3 * time.Second))
             n, err = c.Write([]byte("connect success ..."))
             if err != nil {
+                logrus.Errorln(err)
                 return
             }
 
-            fmt.Println("safrp client ", client.RemoteAddr(), "connect success ...")
-            go Send(c)
-            Read(c)
+            logrus.Infoln("safrp client ", client.RemoteAddr(), "connect success ...")
+
+            var wg sync.WaitGroup
+
+            var steamChan = make(chan []byte, 1000)
+            var dataChan = make(chan []byte, 1000)
+
+            wg.Add(3)
+            go func() {
+                defer wg.Done()
+                common.Run(func() {
+                    Send(c)
+                })
+            }()
+            go func() {
+                defer wg.Done()
+                common.Run(func() {
+                    common.TCPSafrpStream(steamChan, dataChan, TCPDataEnd)
+                })
+            }()
+            go func() {
+                defer wg.Done()
+                go common.Run(func() {
+                    Read(c, steamChan, dataChan)
+                })
+            }()
+            wg.Wait()
         }(client)
     }
 }
@@ -346,10 +358,12 @@ func Send(c net.Conn) {
         case data := <- tcpToClientStream:
             err := c.SetWriteDeadline(time.Now().Add(2 * time.Second))
             if err != nil {
+                logrus.Infoln(err)
                 return
             }
             _, err = c.Write(common.SafrpTCPPackage(data.Data, TCPDataEnd))
             if err != nil {
+                logrus.Errorln(err)
                 if _, ok := err.(net.Error); ok && err == io.EOF {
                     continue
                 }
@@ -360,35 +374,32 @@ func Send(c net.Conn) {
 }
 
 // 从 内网穿透服务器 读数据
-func Read(c net.Conn) {
-    ReadStream(c)
-}
-
-func ReadStream(c net.Conn) {
+func Read(c net.Conn, steamChan, dataChan chan []byte) {
     defer func() {
-        for err := recover(); err != nil; err = recover() {
-            fmt.Println(err)
+        for p := recover();p != nil;p = recover() {
+            logrus.Panicln(p)
         }
     }()
-    defer c.Close()
     closeConn := make(chan bool, 3)
     var n int
     var err error
 
     buf := BufPool.Get().([]byte)
     defer func() {
+        c.Close()
         BufPool.Put(buf)
     }()
     go func() {
         defer func() {
             for p := recover(); p != nil; p = recover() {
-                fmt.Println(p)
+                logrus.Panicln(p)
             }
         }()
         for {
             select {
             case buf := <-dataChan:
-                if len(buf) == 1 {  // 心跳包
+                logrus.Infoln(string(buf))
+                if len(buf) == 0 {  // 心跳包
                     continue
                 }
                 tBuf := bytes.SplitN(buf, []byte("\r\n"), 2)
@@ -398,7 +409,10 @@ func ReadStream(c net.Conn) {
                         tId = tId*10 + int(tBuf[0][i]-'0')
                     }
                 }
+                logrus.Infoln(tId)
+                logrus.Infoln(atomic.LoadUint64(&ConnPool.numberArr[tId]))
                 if atomic.LoadUint64(&ConnPool.numberArr[tId]) == 1 {
+                    logrus.Infoln("响应,id:", tId, string(tBuf[1]))
                     tcpFromClientStream[tId].(chan TCPData) <- TCPData{
                         ConnId: tId,
                         Data:   tBuf[1],
@@ -408,20 +422,23 @@ func ReadStream(c net.Conn) {
         }
     }()
     for {
-        err = c.SetReadDeadline(time.Now().Add(1 * time.Second))
+        err = c.SetReadDeadline(time.Now().Add(5 * 60 * time.Second))
         if err != nil {
-            fmt.Println(err)
+            logrus.Errorln(err)
             closeConn <- true
             return
         }
         n, err = c.Read(buf)
         if err != nil {
+            logrus.Errorln(err)
             if neterr, ok := err.(net.Error);ok && (neterr.Timeout() || err == io.EOF) {
                 continue
             }
             closeConn <- true
             return
         }
+
+        logrus.Infoln(n, string(buf[:n]))
         steamChan <- buf[:n]
     }
 }
