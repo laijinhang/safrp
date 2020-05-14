@@ -14,7 +14,7 @@ func Run(server func()) {
 			defer wg.Done()
 			defer func() {
 				for p := recover();p != nil;p = recover() {
-					logrus.Panicln(p)
+					logrus.Println("panic:", p)
 				}
 			}()
 

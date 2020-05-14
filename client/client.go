@@ -78,21 +78,10 @@ func init() {
 }
 
 func main() {
-    wg := sync.WaitGroup{}
-    for {
-        wg.Add(1)
-        go func() {
-            defer wg.Done()
-            defer func() {
-                for p := recover();p != nil;p = recover() {
-                    logrus.Panicln(p)
-                }
-            }()
-            go proxyClient()
-            Client()
-        }()
-        wg.Wait()
-    }
+    common.Run(func() {
+        go common.Run(proxyClient)
+        common.Run(Client)
+    })
 }
 
 func proxyClient() {
@@ -100,8 +89,9 @@ func proxyClient() {
         func() {
             defer func() {
                 for p := recover();p != nil;p = recover() {
-                    logrus.Panicln(p)
+                    logrus.Println("panic:", p)
                 }
+                time.Sleep(3 * time.Second) // 防特殊情况下,一直重启,导致服务器内存资源消耗
             }()
 
             logrus.Infoln("safrp client ...")
@@ -119,8 +109,9 @@ func proxyClient() {
                         }()
                         defer func() {
                             for p := recover();p != nil;p = recover() {
-                                logrus.Panicln(p)
+                                logrus.Println("panic:", p)
                             }
+                            time.Sleep(3 * time.Second) // 防特殊情况下,一直重启,导致服务器内存资源消耗
                         }()
 
                         conn, err := net.Dial("tcp", conf.ServerIP+":"+conf.ServerPort)
@@ -201,7 +192,7 @@ func Read(c net.Conn, closeConn chan bool, streamChan, dataChan chan []byte) {
     go func() {
         defer func() {
             for p := recover();p != nil;p = recover() {
-                logrus.Panicln(p)
+                logrus.Println("panic:", p)
             }
         }()
         for {
@@ -224,13 +215,19 @@ func Read(c net.Conn, closeConn chan bool, streamChan, dataChan chan []byte) {
                 if len(tBuf[1]) == 0 {
                     logrus.Infoln("编号：", tId, "断开。。。")
                     httpClient[tId].Addr = ""
+                    httpClient[tId].Number = -1
                     httpClient[tId].Conn = nil
                     continue
                 }
-                //if httpClient[tId].Addr != string(temp[0]) {
+                if httpClient[tId].Addr != string(temp[0]) || (httpClient[tId].Addr == string(temp[0]) && httpClient[tId].Number != uint64(tId)) {
                     httpClient[tId].Addr = string(temp[0])
+                    httpClient[tId].Number = uint64(64)
                     httpClient[tId].Dail(conf.HTTPIP + ":" + conf.HTTPPort)
-                //}
+                } else {
+                    if httpClient[tId].Conn == nil {
+                        httpClient[tId].Dail(conf.HTTPIP + ":" + conf.HTTPPort)
+                    }
+                }
                 logrus.Infoln("临时编号:", tId)
                 tcpFromServerStream <- TCPData{
                     ConnId: tId,
@@ -243,10 +240,12 @@ func Read(c net.Conn, closeConn chan bool, streamChan, dataChan chan []byte) {
     for {
         err := c.SetReadDeadline(time.Now().Add(3 * time.Second))
         if err != nil {
+            logrus.Errorln(err)
             return
         }
         n, err := c.Read(buf)
         if err != nil {
+            logrus.Errorln(err)
             if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
                  continue
             }
@@ -312,7 +311,7 @@ func Send(c net.Conn, closeConn chan bool) {
             logrus.Infoln("往safrp服务端", c.RemoteAddr(), "发送心跳包")
            _, err = c.Write(hb)
            if err != nil {
-               logrus.Infoln(err)
+               logrus.Errorln(err)
                if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
                    continue
                }
@@ -327,18 +326,16 @@ func Send(c net.Conn, closeConn chan bool) {
 func Client() {
     for {
         func() {
-            defer func() {
-                for p := recover();p != nil;p = recover() {
-                    logrus.Panicln(p)
-                }
-            }()
+            for p := recover();p != nil;p = recover() {
+                logrus.Println("panic:", p)
+            }
             select {
             case data := <-tcpFromServerStream:
                 logrus.Infoln("临时编号:", data.ConnId)
                 go func(d TCPData) {
                     defer func() {
                         for p := recover();p != nil;p = recover() {
-                            logrus.Panicln(p)
+                            logrus.Println("panic:", p)
                         }
                     }()
                     httpClient[d.ConnId].Write(d.Data)

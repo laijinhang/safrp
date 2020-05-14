@@ -2,7 +2,7 @@ package common
 
 import (
 	"bytes"
-	"fmt"
+	"github.com/sirupsen/logrus"
 	"io"
 	"net"
 	"strconv"
@@ -11,7 +11,7 @@ import (
 
 type HTTPClient struct {
 	Addr string
-	Number string
+	Number uint64
 	Conn net.Conn
 	close bool
 	DeadTime int
@@ -38,7 +38,7 @@ func (c *HTTPClient)Dail(address string) (err error) {
 func (c *HTTPClient)Write(data []byte) error {
 	defer func() {
 		for p := recover();p != nil;p = recover() {
-			fmt.Println(p)
+			logrus.Println("panic", p)
 		}
 		c.close = true
 	}()
@@ -53,7 +53,7 @@ func (c *HTTPClient)Write(data []byte) error {
 func (c *HTTPClient)Read() ([]byte, error) {
 	defer func() {
 		for p := recover();p != nil;p = recover() {
-			fmt.Println(p)
+			logrus.Println("panic", p)
 		}
 		c.close = true
 	}()
@@ -65,6 +65,7 @@ func (c *HTTPClient)Read() ([]byte, error) {
 		c.setDeadTime()
 		n, err := c.Conn.Read(buf)
 		if err != nil {
+			logrus.Errorln(err)
 			if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
 				continue
 			}
@@ -95,6 +96,18 @@ func (c *HTTPClient)Read() ([]byte, error) {
 		break
 	}
 	return resp, nil
+}
+
+/*
+检测该连接是否已经断开
+ */
+func (c *HTTPClient)ConnIsClose() bool {
+	if c.Conn == nil {
+		return true
+	}
+	if c.close == true {
+		return true
+	}
 }
 
 func (c *HTTPClient)setDeadTime() {
