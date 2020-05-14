@@ -108,6 +108,7 @@ func (c *HTTPClient)ConnIsClose() bool {
 	if c.close == true {
 		return true
 	}
+	return c.Close()
 }
 
 func (c *HTTPClient)setDeadTime() {
@@ -143,4 +144,19 @@ func HTTPReq(c net.Conn, buf []byte) (req , other []byte) {
 		}
 	}
 	return
+}
+
+/*
+HTTP请求头验证
+ */
+func CheckHTTPReq(data []byte) (err error) {
+
+	return
+}
+
+/*
+切割HTTP请求部分数据
+ */
+func SplitHTTPReq(data []byte) (req []byte, err error) {
+
 }

@@ -75,6 +75,8 @@ func init() {
     logrus.Infoln("http-ip:", conf.HTTPIP)
     logrus.Infoln("http-port:", conf.HTTPPort)
     logrus.Infoln()
+
+    logrus.SetLevel(logrus.PanicLevel)
 }
 
 func main() {
@@ -215,7 +217,7 @@ func Read(c net.Conn, closeConn chan bool, streamChan, dataChan chan []byte) {
                 if len(tBuf[1]) == 0 {
                     logrus.Infoln("编号：", tId, "断开。。。")
                     httpClient[tId].Addr = ""
-                    httpClient[tId].Number = -1
+                    httpClient[tId].Number = 0
                     httpClient[tId].Conn = nil
                     continue
                 }

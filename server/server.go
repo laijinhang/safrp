@@ -2,6 +2,7 @@ package main
 
 import (
     "bytes"
+    "fmt"
     "github.com/sirupsen/logrus"
     "gopkg.in/ini.v1"
     "io"
@@ -106,6 +107,7 @@ func init() {
         CallerPrettyfier:          nil,
     })
     logrus.SetReportCaller(true)
+    logrus.SetLevel(logrus.PanicLevel)
 }
 
 type TCPData struct {
@@ -116,7 +118,7 @@ type TCPData struct {
 func main() {
     go common.Run(proxyTCPServer)  // 处理TCP外网请求，短连接服务
     go common.Run(proxyUDPServer)  // 处理UDP外网请求
-    go common.Run(server)          // 处理TCP外网请求，短连接服务
+    go common.Run(SafrpTCPServer)  // 处理TCP外网请求，短连接服务
     select {}
 }
 
@@ -172,34 +174,36 @@ func proxyTCPServer() {
 
 // 处理 UDP外网 请求
 func proxyUDPServer() {
-    //wg := sync.WaitGroup{}
-    //for {
-    //    wg.Add(1)
-    //    go func() {
-    //        defer wg.Done()
-    //        defer func() {
-    //            for v := recover();v != nil;v = recover() {
-    //                fmt.Println(v)
-    //            }
-    //        }()
-    //        udpAddr, err := net.ResolveUDPAddr("udp", conf.ServerIP+":"+conf.ServerUDPPort)
-    //        if err != nil {
-    //            panic(err)
-    //        }
-    //        for {
-    //            conn, err := net.ListenUDP("udp", udpAddr)
-    //            if err != nil {
-    //                fmt.Println(err)
-    //                continue
-    //            }
-    //            go func(c net.Conn) {
-    //                // 处理连接进来的读操作
-    //                // 处理连接进来的写操作
-    //            }(conn)
-    //        }
-    //    }()
-    //    wg.Wait()
-    //}
+    wg := sync.WaitGroup{}
+    for {
+       wg.Add(1)
+       go func() {
+           defer wg.Done()
+           defer func() {
+               for p := recover();p != nil;p = recover() {
+                   logrus.Println(p)
+               }
+               time.Sleep(3 * time.Second)  // 缓慢重启
+           }()
+           udpAddr, err := net.ResolveUDPAddr("udp", conf.ServerIP+":"+conf.ServerUDPPort)
+           if err != nil {
+               logrus.Errorln(err)
+               
+           }
+           for {
+               conn, err := net.ListenUDP("udp", udpAddr)
+               if err != nil {
+                   fmt.Println(err)
+                   continue
+               }
+               go func(c net.Conn) {
+                   // 处理连接进来的读操作
+                   // 处理连接进来的写操作
+               }(conn)
+           }
+       }()
+       wg.Wait()
+    }
 }
 
 // 从 外网 接收TCP数据
@@ -281,7 +285,7 @@ func ExtranetUDPSend(c net.Conn, number int) {
 }
 
 // 处理穿透内网服务
-func server() {
+func SafrpTCPServer() {
     listen, err := net.Listen("tcp", ":"+ conf.SafrpPort)
     logrus.Infoln("safrp server listen :" + conf.SafrpPort + " ...")
     if err != nil {
@@ -392,7 +396,7 @@ func Read(c net.Conn, steamChan, dataChan chan []byte) {
     go func() {
         defer func() {
             for p := recover(); p != nil; p = recover() {
-                logrus.Panicln(p)
+                logrus.Println(p)
             }
         }()
         for {
