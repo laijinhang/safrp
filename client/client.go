@@ -75,8 +75,6 @@ func init() {
     logrus.Infoln("http-ip:", conf.HTTPIP)
     logrus.Infoln("http-port:", conf.HTTPPort)
     logrus.Infoln()
-
-    logrus.SetLevel(logrus.PanicLevel)
 }
 
 func main() {
