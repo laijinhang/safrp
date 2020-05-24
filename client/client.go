@@ -25,9 +25,6 @@ var conf Config
 var BufSize = 1024 * 1024 * 8
 var TCPDataEnd = []byte{'<','e','>'}
 
-var tcpToServerStream = make(chan TCPData, 1000)
-var tcpFromServerStream = make(chan TCPData, 1000)
-var httpClient = [2001]common.HTTPClient{}
 
 type TCPData struct {
     ConnId int
@@ -75,6 +72,8 @@ func init() {
     logrus.Infoln("http-ip:", conf.HTTPIP)
     logrus.Infoln("http-port:", conf.HTTPPort)
     logrus.Infoln()
+
+    logrus.SetLevel(logrus.PanicLevel)
 }
 
 func main() {
