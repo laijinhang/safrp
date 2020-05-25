@@ -13,7 +13,7 @@ func Run(server func()) {
 		go func() {
 			defer wg.Done()
 			defer func() {
-				for p := recover();p != nil;p = recover() {
+				for p := recover(); p != nil; p = recover() {
 					logrus.Println("panic:", p)
 				}
 			}()
