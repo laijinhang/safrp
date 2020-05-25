@@ -20,9 +20,23 @@ type Config struct {
 
 type Context struct {
 	Conf Config
+	NumberPool *common.NumberPool
+	ReadDate chan DataPackage
+	SendData chan DataPackage
+	DateLength int
+}
+
+type DataPackage struct {
+	Number int
+	Data []byte
 }
 
 var confs []Config
+
+const (
+	TCPStreamLength = 1024 * 8	// 1个TCP窗口大小
+	UDPDatagramLength = 1472	// 1个UDP报文长度
+)
 
 func init() {
 	cfg, err := ini.Load("./safrp.ini")
@@ -49,7 +63,19 @@ func main() {
 		// 启动 pipe组件
 		for i := 0;i < len(confs);i++ {
 			go func() {
-				ctx := Context{Conf:confs[i]}
+				ctx := Context{
+					Conf:confs[i],
+					NumberPool:common.NewNumberPool(3000, 1),
+					SendData:make(chan DataPackage, 1000),
+					ReadDate:make(chan DataPackage, 1000),
+				}
+
+				es := UnitFactory(ctx.Conf.Proxy, ctx.Conf.ExtranetPort)
+				ss := UnitFactory(ctx.Conf.Proxy, ctx.Conf.ServerPort)
+
+				extranetServer.Register(&ctx, &es)
+				safrpServer.Register(&ctx, &ss)
+
 				go common.Run(func() {
 					// 对外
 					ExtranetServer(&ctx)
@@ -65,17 +91,18 @@ func main() {
 }
 
 func ExtranetServer(ctx *Context) {
-	s.Get(ctx).Read()
-	s.Get(ctx).Send()
+	go extranetServer.Get(ctx).Read(nil)
+	extranetServer.Get(ctx).Send(ctx.SendData)
 }
 
 func SafrpServer(ctx *Context) {
-	s.Get(ctx).Read()
-	s.Get(ctx).Send()
+	go safrpServer.Get(ctx).Read(ctx.ReadDate)
+	safrpServer.Get(ctx).Send(ctx.ReadDate)
 }
 
 // 单例模式
-var s single
+var extranetServer single
+var safrpServer single
 
 type single struct {
 	lock sync.Locker
@@ -95,26 +122,29 @@ func (s *single)Get(ctx *Context) Server {
 }
 
 // 组件工厂
-func UnitFactory(ctx Context) Server {
-	switch ctx.Conf.Proxy {
-	case "http", "tcp":
-		return &TCPServer{Ctx:ctx}
-	default:
-		return &UDPServer{Ctx:ctx}
+func UnitFactory(proxy, port string) Server {
+	switch proxy {
+	case "tcp":
+		return &TCPServer{Port:port}
+	case "udp":
+		return &UDPServer{Port:port}
+	case "http":
+		return &HTTPServer{Port:port}
 	}
 	return nil
 }
 
 type Server interface {
-	Read()
-	Send()
+	Read(interface{})
+	Send(interface{})
+	Proxy() string
 }
 
 type TCPServer struct {
-	Ctx Context
+	Port string
 }
 
-func (t *TCPServer) Read() {
+func (t *TCPServer) Read(c interface{}) {
 	listen, err := net.Listen("tcp", conf.ServerIP + ":" + conf.ServerTCPPort)
 	logrus.Infoln("listen :" + conf.ServerIP + ":" + conf.ServerTCPPort + " ...")
 	if err != nil {
@@ -163,11 +193,28 @@ func (t *TCPServer) Read() {
 	}
 }
 
-func (t *TCPServer) Send() {}
+func (t *TCPServer) Send(c interface{}) {}
 
-type UDPServer struct {
-	Ctx Context
+func (t *TCPServer) Proxy() string {
+	return "tcp"
 }
 
-func (u *UDPServer) Read() {}
-func (u *UDPServer) Send() {}
+type UDPServer struct {
+	Port string
+}
+
+func (u *UDPServer) Read(c interface{}) {}
+func (u *UDPServer) Send(c interface{}) {}
+func (u *UDPServer) Proxy() string {
+	return "udp"
+}
+
+type HTTPServer struct {
+	Port string
+}
+
+func (h *HTTPServer) Read(c interface{}) {}
+func (h *HTTPServer) Send(c interface{}) {}
+func (h *HTTPServer) Proxy() string {
+	return "http"
+}
