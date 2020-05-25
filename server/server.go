@@ -120,15 +120,15 @@ func UnitFactory(proxy, ip, port string) common.Server {
 
 // TCP监听插件
 // TCP写数据插件
-func TCPRead(ctx *common.Context) {
+func TCPWrite(ctx *common.Context) {
 
 }
 // TCP读数据插件
-func TCPWrite(ctx *common.Context) {
+func TCPRead(ctx *common.Context) {
 
 }
 
 // 插件接口
-type plugInInterface(ctx *common.Context) {
+func plugInInterface(ctx *common.Context) {
 
 }
