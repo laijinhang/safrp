@@ -69,13 +69,19 @@ func main() {
 }
 
 func ExtranetServer(ctx *common.Context) {
-	go extranetServer.Get(ctx).ReadServer(nil)
-	extranetServer.Get(ctx).SendServer(ctx.SendData)
+	go extranetServer.Get(ctx).ReadServer(ctx, []func(ctx *common.Context) {
+		TCPRead,
+		TCPWrite,
+	})
+	extranetServer.Get(ctx).SendServer(ctx, []func(ctx *common.Context) {
+		TCPRead,
+		TCPWrite,
+	})
 }
 
 func SafrpServer(ctx *common.Context) {
-	go safrpServer.Get(ctx).ReadServer(nil)
-	safrpServer.Get(ctx).SendServer(ctx.ReadDate)
+	go safrpServer.Get(ctx).ReadServer(ctx, nil)
+	safrpServer.Get(ctx).SendServer(ctx, nil)
 }
 
 // 单例模式
@@ -110,4 +116,19 @@ func UnitFactory(proxy, ip, port string) common.Server {
 		return &common.HTTPServer{IP: ip, Port:port}
 	}
 	return nil
+}
+
+// TCP监听插件
+// TCP写数据插件
+func TCPRead(ctx *common.Context) {
+
+}
+// TCP读数据插件
+func TCPWrite(ctx *common.Context) {
+
+}
+
+// 插件接口
+type plugInInterface(ctx *common.Context) {
+
 }
