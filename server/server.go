@@ -96,7 +96,7 @@ func ExtranetServer(ctx *Context) {
 }
 
 func SafrpServer(ctx *Context) {
-	go safrpServer.Get(ctx).Read(ctx.ReadDate)
+	go safrpServer.Get(ctx).Read(nil)
 	safrpServer.Get(ctx).Send(ctx.ReadDate)
 }
 
