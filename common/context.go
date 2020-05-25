@@ -1,5 +1,9 @@
 package common
 
 type Context struct {
-	Conf interface{}
+	Conf Config
+	NumberPool *NumberPool
+	ReadDate chan DataPackage
+	SendData chan DataPackage
+	DateLength int
 }
