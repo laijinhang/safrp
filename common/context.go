@@ -1,12 +1,13 @@
 package common
 
 type Context struct {
-	Conf Config
+	Conf       Config
 	NumberPool *NumberPool
-	ReadDate chan DataPackage
-	SendData chan DataPackage
+	ReadDate   chan DataPackage
+	SendData   chan DataPackage
 	DateLength int
-	IP string
-	Port string
-	Proxy string
+	IP         string
+	Port       string
+	Protocol   string
+	Conn       interface{}
 }

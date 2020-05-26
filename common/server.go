@@ -3,7 +3,7 @@ package common
 type Server interface {
 	ReadServer(ctx *Context, funs []func(ctx *Context))
 	SendServer(ctx *Context, funs []func(ctx *Context))
-	Proxy() string
+	Protocol() string
 }
 
 type TCPServer struct {
@@ -27,7 +27,7 @@ func (this *TCPServer) SendServer(ctx *Context, funs []func(ctx *Context)) {
 	}
 }
 
-func (t *TCPServer) Proxy() string {
+func (t *TCPServer) Protocol() string {
 	return "tcp"
 }
 
@@ -52,7 +52,7 @@ func (this *UDPServer) SendServer(ctx *Context, funs []func(ctx *Context)) {
 	}
 }
 
-func (this *UDPServer) Proxy() string {
+func (this *UDPServer) Protocol() string {
 	return "udp"
 }
 
@@ -77,6 +77,6 @@ func (this *HTTPServer) SendServer(ctx *Context, funs []func(ctx *Context)) {
 	}
 }
 
-func (this *HTTPServer) Proxy() string {
+func (this *HTTPServer) Protocol() string {
 	return "http"
 }

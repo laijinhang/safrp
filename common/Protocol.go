@@ -4,7 +4,7 @@ type Config struct {
 	IP           string
 	ExtranetPort string
 	ServerPort   string
-	Proxy        string
+	Protocol     string
 	PipeNum      uint8
 }
 

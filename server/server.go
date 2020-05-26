@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/ini.v1"
+	"net"
 	"safrp/common"
 	"sync"
 )
@@ -28,7 +29,7 @@ func init() {
 			IP:           pipeConf.Key("ip").String(),
 			ExtranetPort: pipeConf.Key("extranet_port").String(),
 			ServerPort:   pipeConf.Key("server_port").String(),
-			Proxy:        pipeConf.Key("proxy").String(),
+			Protocol:     pipeConf.Key("protocol").String(),
 			PipeNum: func(t uint, err error) uint8 {
 				return uint8(t)
 			}(pipeConf.Key("pipe_num").Uint()),
@@ -48,11 +49,14 @@ func main() {
 					ReadDate:make(chan common.DataPackage, 1000),
 				}
 
-				es := UnitFactory(ctx.Conf.Proxy, ctx.Conf.IP, ctx.Conf.ExtranetPort)
-				ss := UnitFactory(ctx.Conf.Proxy, ctx.Conf.IP, ctx.Conf.ServerPort)
+				es := UnitFactory(ctx.Conf.Protocol, ctx.Conf.IP, ctx.Conf.ExtranetPort)
+				ss := UnitFactory(ctx.Conf.Protocol, ctx.Conf.IP, ctx.Conf.ServerPort)
 
-				extranetServer.Register(&ctx, &es)
-				safrpServer.Register(&ctx, &ss)
+				ctx1 := common.Context{}
+				ctx2 := common.Context{}
+
+				extranetServer.Register(&ctx1, &es)
+				safrpServer.Register(&ctx2, &ss)
 
 				go common.Run(func() {
 					// 对外
@@ -118,15 +122,41 @@ func UnitFactory(proxy, ip, port string) common.Server {
 	return nil
 }
 
+/*--------- 插件 -----------*/
+// TCP连接插件
+func TCPConnect(ctx *common.Context) {
+	conn, err := net.Dial(ctx.Protocol, ctx.IP + ":" + ctx.Port)
+	if err != nil {
+		logrus.Panicln(err)
+	}
+	ctx.Conn = conn
+}
+
 // TCP监听插件
+func TCPListen(ctx *common.Context)  {
+	conn, err := net.Listen(ctx.Protocol, ctx.IP + ":" + ctx.Port)
+		if err != nil {
+		logrus.Panicln(err)
+	}
+	ctx.Conn = conn
+}
+
 // TCP写数据插件
 func TCPWrite(ctx *common.Context) {
 
 }
+
 // TCP读数据插件
 func TCPRead(ctx *common.Context) {
 
 }
+
+// 通过密码登录插件
+// 连接安全验证插件
+// 发送心跳包插件
+// 接收心跳包插件
+// 限流插件
+// IP记录插件
 
 // 插件接口
 func plugInInterface(ctx *common.Context) {
