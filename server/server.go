@@ -10,7 +10,15 @@ import (
 )
 
 
-var confs []common.Config
+type Config struct {
+	IP           string
+	ExtranetPort string
+	ServerPort   string
+	Protocol     string
+	PipeNum      uint8
+}
+
+var confs []Config
 
 const (
 	TCPStreamLength = 1024 * 8	// 1个TCP窗口大小
@@ -25,7 +33,7 @@ func init() {
 
 	for i := 1; len(cfg.Section(fmt.Sprintf("pipe%d", i)).Keys()) != 0;i++ {
 		pipeConf := cfg.Section(fmt.Sprintf("pipe%d", i))
-		confs = append(confs, common.Config{
+		confs = append(confs, Config{
 			IP:           pipeConf.Key("ip").String(),
 			ExtranetPort: pipeConf.Key("extranet_port").String(),
 			ServerPort:   pipeConf.Key("server_port").String(),
@@ -49,8 +57,8 @@ func main() {
 					ReadDate:make(chan common.DataPackage, 1000),
 				}
 
-				es := UnitFactory(ctx.Conf.Protocol, ctx.Conf.IP, ctx.Conf.ExtranetPort)
-				ss := UnitFactory(ctx.Conf.Protocol, ctx.Conf.IP, ctx.Conf.ServerPort)
+				es := UnitFactory(ctx.Conf.(Config).Protocol, ctx.Conf.(Config).IP, ctx.Conf.(Config).ExtranetPort)
+				ss := UnitFactory(ctx.Conf.(Config).Protocol, ctx.Conf.(Config).IP, ctx.Conf.(Config).ServerPort)
 
 				ctx1 := common.Context{}
 				ctx2 := common.Context{}
