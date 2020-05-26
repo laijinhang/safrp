@@ -5,6 +5,7 @@ safrp（Simple and fast reverse proxy）是基于Go语言开发的一个轻量�
 目前正在开发v0.3.0版本
 
 [v0.2.0](https://github.com/laijinhang/safrp/releases/tag/v0.2.0)
+
 [v0.1.0](https://github.com/laijinhang/safrp/releases/tag/v0.1.0)
 ### 功能
 目前仅实现HTTP协议数据的转发

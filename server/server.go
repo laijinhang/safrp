@@ -55,6 +55,7 @@ func main() {
 					NumberPool:common.NewNumberPool(3000, 1),
 					SendData:make(chan common.DataPackage, 1000),
 					ReadDate:make(chan common.DataPackage, 1000),
+					Log: &logrus.Logger{},
 				}
 
 				es := UnitFactory(ctx.Conf.(Config).Protocol, ctx.Conf.(Config).IP, ctx.Conf.(Config).ExtranetPort)
@@ -135,7 +136,7 @@ func UnitFactory(proxy, ip, port string) common.Server {
 func TCPConnect(ctx *common.Context) {
 	conn, err := net.Dial(ctx.Protocol, ctx.IP + ":" + ctx.Port)
 	if err != nil {
-		logrus.Panicln(err)
+		ctx.Log.Panicln(err)
 	}
 	ctx.Conn = conn
 }
@@ -143,10 +144,27 @@ func TCPConnect(ctx *common.Context) {
 // TCP监听插件
 func TCPListen(ctx *common.Context)  {
 	conn, err := net.Listen(ctx.Protocol, ctx.IP + ":" + ctx.Port)
-		if err != nil {
-		logrus.Panicln(err)
+	if err != nil {
+		ctx.Log.Panicln(err)
 	}
 	ctx.Conn = conn
+}
+
+// safrp TCP服务端插件
+func SafrpTCPServer(ctx *common.Context) {
+	for {
+		client, err := ctx.Conn.(net.Listener).Accept()
+		if err != nil {
+			ctx.Log.Errorln(err)
+		}
+		connChan := make(chan net.Conn)
+		go common.Run(func() {
+			c := <- connChan
+			checkConnectPassword(c)
+		})
+		connChan <- client
+
+	}
 }
 
 // TCP写数据插件
@@ -161,6 +179,9 @@ func TCPRead(ctx *common.Context) {
 
 // 通过密码登录插件
 // 连接安全验证插件
+func checkConnectPassword(c net.Conn) {
+
+}
 // 发送心跳包插件
 // 接收心跳包插件
 // 限流插件

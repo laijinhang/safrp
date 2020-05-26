@@ -1,5 +1,7 @@
 package common
 
+import "github.com/sirupsen/logrus"
+
 type Context struct {
 	Conf       interface{}
 	NumberPool *NumberPool
@@ -10,4 +12,5 @@ type Context struct {
 	Port       string
 	Protocol   string
 	Conn       interface{}
+	Log 	  *logrus.Logger
 }
