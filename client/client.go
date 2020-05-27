@@ -20,7 +20,6 @@ var conf Config
 var BufSize = 1024 * 1024 * 8
 var TCPDataEnd = []byte{'<','e','>'}
 
-
 type TCPData struct {
     ConnId int
     Data []byte

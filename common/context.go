@@ -13,4 +13,5 @@ type Context struct {
 	Protocol   string
 	Conn       interface{}
 	Log 	  *logrus.Logger
+	Expand	   interface{}
 }

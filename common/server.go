@@ -3,6 +3,7 @@ package common
 type Server interface {
 	ReadServer(ctx *Context, funs []func(ctx *Context))
 	SendServer(ctx *Context, funs []func(ctx *Context))
+	Server(ctx *Context, funs []func(ctx *Context))
 	Protocol() string
 }
 
@@ -20,6 +21,14 @@ func (this *TCPServer) ReadServer(ctx *Context, funs []func(ctx *Context)) {
 }
 
 func (this *TCPServer) SendServer(ctx *Context, funs []func(ctx *Context)) {
+	ctx.IP = this.IP
+	ctx.Port = this.Port
+	for i := 0;i < len(funs);i++ {
+		funs[i](ctx)
+	}
+}
+
+func (this *TCPServer) Server(ctx *Context, funs []func(ctx *Context)) {
 	ctx.IP = this.IP
 	ctx.Port = this.Port
 	for i := 0;i < len(funs);i++ {
@@ -52,6 +61,14 @@ func (this *UDPServer) SendServer(ctx *Context, funs []func(ctx *Context)) {
 	}
 }
 
+func (this *UDPServer) Server(ctx *Context, funs []func(ctx *Context)) {
+	ctx.IP = this.IP
+	ctx.Port = this.Port
+	for i := 0;i < len(funs);i++ {
+		funs[i](ctx)
+	}
+}
+
 func (this *UDPServer) Protocol() string {
 	return "udp"
 }
@@ -70,6 +87,14 @@ func (this *HTTPServer) ReadServer(ctx *Context, funs []func(ctx *Context)) {
 }
 
 func (this *HTTPServer) SendServer(ctx *Context, funs []func(ctx *Context)) {
+	ctx.IP = this.IP
+	ctx.Port = this.Port
+	for i := 0;i < len(funs);i++ {
+		funs[i](ctx)
+	}
+}
+
+func (this *HTTPServer) Server(ctx *Context, funs []func(ctx *Context)) {
 	ctx.IP = this.IP
 	ctx.Port = this.Port
 	for i := 0;i < len(funs);i++ {
