@@ -63,7 +63,7 @@ func main() {
 	common.Run(func() {
 		// 启动 pipe组件
 		for i := 0;i < len(confs);i++ {
-			go func() {
+			go func(i int) {
 				ctx := common.Context{
 					Conf:confs[i],
 					NumberPool:common.NewNumberPool(3000, 1),
@@ -122,7 +122,7 @@ func main() {
 					// 对safrp客户端
 					SafrpServer(&ctx)
 				})
-			}()
+			}(i)
 		}
 		select {}
 	})
@@ -155,13 +155,16 @@ var extranetServer single
 var safrpServer single
 
 type single struct {
-	lock sync.Locker
+	lock sync.Mutex
 	server map[*common.Context]common.Server
 }
 
 func (s *single)Register(ctx *common.Context, server *common.Server) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
+	if len(s.server) == 0 {
+		s.server = make(map[*common.Context]common.Server)
+	}
 	s.server[ctx] = *server
 }
 
@@ -339,7 +342,7 @@ func SafrpTCPRead(ctx *common.Context) {
 	for {
 		select {
 		case data := <- ctx.ReadDate:
-
+			fmt.Println(data)
 		}
 	}
 }
