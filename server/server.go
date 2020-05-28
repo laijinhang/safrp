@@ -276,11 +276,11 @@ func ExtranetTCPServer(ctx *common.Context) {
 						return
 					default:
 						// 一直读，直到连接关闭
-						err := ctx.Conn.(net.Conn).SetReadDeadline(time.Now().Add(1 * time.Second))
+						err := client.SetReadDeadline(time.Now().Add(1 * time.Second))
 						if err != nil {
 							return
 						}
-						n, err := ctx.Conn.(net.Conn).Read(buf)
+						n, err := client.Read(buf)
 						if err != nil {
 							if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
 								continue
