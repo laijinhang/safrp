@@ -78,7 +78,7 @@ func main() {
 					CallerPrettyfier:          nil,
 				})
 				log.SetReportCaller(true)
-
+				log.Printf("启动pipe%d\n", i + 1)
 				ctx := common.Context{
 					Conf:confs[i],
 					NumberPool:common.NewNumberPool(3000, 1),
@@ -90,6 +90,8 @@ func main() {
 				es := UnitFactory(ctx.Conf.(Config).Protocol, ctx.Conf.(Config).IP, ctx.Conf.(Config).ExtranetPort)
 				ss := UnitFactory(ctx.Conf.(Config).Protocol, ctx.Conf.(Config).IP, ctx.Conf.(Config).ServerPort)
 
+
+				connDataChan := make([]chan common.DataPackage, ctx.Conf.(Config).PipeNum+1)
 				ctx1 := common.Context{
 					Conf:       confs[i],
 					NumberPool: common.NewNumberPool(3000, 1),
@@ -105,6 +107,7 @@ func main() {
 						ConnManage:         make([]net.Conn, ctx.Conf.(Config).PipeNum+1),
 						PipeConnControllor: make(chan int, ctx.Conf.(Config).PipeNum),
 						ConnNumberPool: common.NewNumberPool(uint64(ctx.Conf.(Config).PipeNum), uint64(1)),
+						ConnDataChan: connDataChan,
 					},
 				}
 				ctx2 := common.Context{
