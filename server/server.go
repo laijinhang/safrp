@@ -64,12 +64,27 @@ func main() {
 		// 启动 pipe组件
 		for i := 0;i < len(confs);i++ {
 			go func(i int) {
+				log := logrus.New()
+				log.SetLevel(logrus.TraceLevel)
+				log.SetFormatter(&logrus.TextFormatter{
+					ForceColors:               true,
+					FullTimestamp:             true,
+					TimestampFormat:           "2006-01-02 15:04:05",
+					DisableSorting:            false,
+					SortingFunc:               nil,
+					DisableLevelTruncation:    true,
+					QuoteEmptyFields:          false,
+					FieldMap:                  nil,
+					CallerPrettyfier:          nil,
+				})
+				log.SetReportCaller(true)
+
 				ctx := common.Context{
 					Conf:confs[i],
 					NumberPool:common.NewNumberPool(3000, 1),
 					SendData:make(chan common.DataPackage, 1000),
 					ReadDate:make(chan common.DataPackage, 1000),
-					Log: &logrus.Logger{},
+					Log: log,
 				}
 
 				es := UnitFactory(ctx.Conf.(Config).Protocol, ctx.Conf.(Config).IP, ctx.Conf.(Config).ExtranetPort)
@@ -114,13 +129,14 @@ func main() {
 				extranetServer.Register(&ctx1, &es)
 				safrpServer.Register(&ctx2, &ss)
 
+
 				go common.Run(func() {
 					// 对外
-					ExtranetServer(&ctx)
+					ExtranetServer(&ctx1)
 				})
 				go common.Run(func() {
 					// 对safrp客户端
-					SafrpServer(&ctx)
+					SafrpServer(&ctx2)
 				})
 			}(i)
 		}
@@ -151,20 +167,23 @@ func SafrpServer(ctx *common.Context) {
 }
 
 // 单例模式
-var extranetServer single
-var safrpServer single
+var extranetServer = NewSingle()
+var safrpServer = NewSingle()
 
 type single struct {
 	lock sync.Mutex
 	server map[*common.Context]common.Server
 }
 
+func NewSingle() single {
+	return single{
+		server: make(map[*common.Context]common.Server),
+	}
+}
+
 func (s *single)Register(ctx *common.Context, server *common.Server) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	if len(s.server) == 0 {
-		s.server = make(map[*common.Context]common.Server)
-	}
 	s.server[ctx] = *server
 }
 
