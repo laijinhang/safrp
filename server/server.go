@@ -17,7 +17,7 @@ type Config struct {
 	ExtranetPort string
 	ServerPort   string
 	Protocol     string
-	PipeNum      uint8
+	PipeNum      int
 }
 
 type Context struct {
@@ -52,9 +52,12 @@ func init() {
 			ExtranetPort: pipeConf.Key("extranet_port").String(),
 			ServerPort:   pipeConf.Key("server_port").String(),
 			Protocol:     pipeConf.Key("protocol").String(),
-			PipeNum: func(t uint, err error) uint8 {
-				return uint8(t)
-			}(pipeConf.Key("pipe_num").Uint()),
+			PipeNum: func(v int, e error) int {
+				if e != nil {
+					panic(e)
+				}
+				return v
+			}(pipeConf.Key("pipe_num").Int()),
 		})
 	}
 }
@@ -94,6 +97,7 @@ func main() {
 				connDataChan := make([]chan common.DataPackage, ctx.Conf.(Config).PipeNum+1)
 				ctx1 := common.Context{
 					Conf:       confs[i],
+					UnitId: 	i + 1,
 					NumberPool: common.NewNumberPool(3000, 1),
 					ReadDate:   ctx.ReadDate,
 					SendData:   ctx.SendData,
@@ -112,6 +116,7 @@ func main() {
 				}
 				ctx2 := common.Context{
 					Conf:       confs[i],
+					UnitId: 	i + 1,
 					NumberPool: common.NewNumberPool(3000, 1),
 					ReadDate:   ctx.ReadDate,
 					SendData:   ctx.SendData,
@@ -161,6 +166,15 @@ func SafrpServer(ctx *common.Context) {
 	go safrpServer.Get(ctx).Server(ctx, []func(ctx *common.Context) {
 		SafrpTCPServer,
 	})
+	// 等待safrp客户端与服务端之间的管道建立完成
+	nowConnectSuccesPipeNum := len(ctx.Expand.(Context).PipeConnControllor) // 当前与safrp客户端建立的管道数
+	for ctx.Conf.(Config).PipeNum != len(ctx.Expand.(Context).PipeConnControllor) {
+		if nowConnectSuccesPipeNum != len(ctx.Expand.(Context).PipeConnControllor) {
+			time.Sleep(300 * time.Millisecond)
+		} else {
+			ctx.Log.Infoln(fmt.Sprintf("组件: %d，当前与safrp客户端已建立的管道数：%d\n", ctx.UnitId, nowConnectSuccesPipeNum))
+		}
+	}
 	go safrpServer.Get(ctx).ReadServer(ctx, []func(ctx *common.Context) {
 		SafrpTCPSend,
 	})
@@ -363,6 +377,9 @@ func SafrpTCPSend(ctx *common.Context) {
 	for {
 		select {
 		case data := <- ctx.ReadDate:
+			ctx.Log.Infoln(fmt.Sprintf("\n---------------\n编号：%d\n请求数据：%s\n----------------\n", data.Number, string(data.Data)))
+			// 判断管道是否建立
+
 			// 向某个管道写数据
 			ctx.Expand.(Context).ConnManage[data.Number % int(ctx.Conf.(Config).PipeNum)].Write(data.Data)
 		}
@@ -373,8 +390,8 @@ func SafrpTCPSend(ctx *common.Context) {
 func SafrpTCPRead(ctx *common.Context) {
 	for {
 		select {
-		case data := <- ctx.ReadDate:
-			fmt.Println(data)
+		//case data := <- ctx.ReadDate:
+
 		}
 	}
 }

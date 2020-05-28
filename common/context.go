@@ -4,6 +4,7 @@ import "github.com/sirupsen/logrus"
 
 type Context struct {
 	Conf       interface{}
+	UnitId		int
 	NumberPool *NumberPool
 	ReadDate   chan DataPackage
 	SendData   chan DataPackage
