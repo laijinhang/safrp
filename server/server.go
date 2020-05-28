@@ -98,7 +98,7 @@ func main() {
 
 					IP:         "",
 					Port:       "",
-					Protocol:   "",
+					Protocol:   GetBaseProtocol(confs[i].Protocol),
 					Conn:       nil,
 					Log:        ctx.Log,
 					Expand:     Context{
