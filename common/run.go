@@ -40,3 +40,50 @@ func Run(server func()) {
 		time.Sleep(time.Second)
 	}
 }
+
+
+type single struct {
+	lock sync.Mutex
+	server map[*Context]Server
+}
+
+func NewSingle() single {
+	return single{
+		server: make(map[*Context]Server),
+	}
+}
+
+func (s *single)Register(ctx *Context, server *Server) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.server[ctx] = *server
+}
+
+func (s *single)Get(ctx *Context) Server {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	return s.server[ctx]
+}
+
+// 组件工厂
+func UnitFactory(protocol, ip, port string) Server {
+	switch protocol {
+	case "tcp":
+		return &TCPServer{IP:ip, Port:port}
+	case "udp":
+		return &UDPServer{IP:ip, Port:port}
+	case "http":
+		return &HTTPServer{IP: ip, Port:port}
+	}
+	return nil
+}
+
+func GetBaseProtocol(protocol string) string {
+	switch protocol {
+	case "tcp", "http":
+		return "tcp"
+	case "udp":
+		return "udp"
+	}
+	return ""
+}

@@ -82,57 +82,34 @@ func main() {
 				})
 				log.SetReportCaller(true)
 				log.Printf("启动pipe%d\n", i + 1)
+
 				ctx := common.Context{
 					Conf:confs[i],
+					UnitId: 	i + 1,
 					NumberPool:common.NewNumberPool(3000, 1),
 					SendData:make(chan common.DataPackage, 1000),
 					ReadDate:make(chan common.DataPackage, 1000),
 					Log: log,
+					Protocol:   common.GetBaseProtocol(confs[i].Protocol),
+					Conn:       nil,
 				}
-
-				es := UnitFactory(ctx.Conf.(Config).Protocol, ctx.Conf.(Config).IP, ctx.Conf.(Config).ExtranetPort)
-				ss := UnitFactory(ctx.Conf.(Config).Protocol, ctx.Conf.(Config).IP, ctx.Conf.(Config).ServerPort)
-
+				ctx1 := ctx
+				ctx2 := ctx
 
 				connDataChan := make([]chan common.DataPackage, ctx.Conf.(Config).PipeNum+1)
-				ctx1 := common.Context{
-					Conf:       confs[i],
-					UnitId: 	i + 1,
-					NumberPool: common.NewNumberPool(3000, 1),
-					ReadDate:   ctx.ReadDate,
-					SendData:   ctx.SendData,
+				ctx1.Expand = Context{
+					ConnManage:         make([]net.Conn, ctx.Conf.(Config).PipeNum+1),
+					PipeConnControllor: make(chan int, ctx.Conf.(Config).PipeNum),
+					ConnNumberPool: common.NewNumberPool(uint64(ctx.Conf.(Config).PipeNum), uint64(1)),
+					ConnDataChan: connDataChan}
+				ctx2.Expand = Context{
+					ConnManage:         make([]net.Conn, ctx.Conf.(Config).PipeNum+1),
+					ConnClose:			make([]chan bool, ctx.Conf.(Config).PipeNum+1),
+					PipeConnControllor: make(chan int, ctx.Conf.(Config).PipeNum),
+					ConnNumberPool: common.NewNumberPool(uint64(ctx.Conf.(Config).PipeNum), uint64(1))}
 
-					IP:         "",
-					Port:       "",
-					Protocol:   GetBaseProtocol(confs[i].Protocol),
-					Conn:       nil,
-					Log:        ctx.Log,
-					Expand:     Context{
-						ConnManage:         make([]net.Conn, ctx.Conf.(Config).PipeNum+1),
-						PipeConnControllor: make(chan int, ctx.Conf.(Config).PipeNum),
-						ConnNumberPool: common.NewNumberPool(uint64(ctx.Conf.(Config).PipeNum), uint64(1)),
-						ConnDataChan: connDataChan,
-					},
-				}
-				ctx2 := common.Context{
-					Conf:       confs[i],
-					UnitId: 	i + 1,
-					NumberPool: common.NewNumberPool(3000, 1),
-					ReadDate:   ctx.ReadDate,
-					SendData:   ctx.SendData,
-
-					IP:         "",
-					Port:       "",
-					Protocol:   GetBaseProtocol(confs[i].Protocol),
-					Conn:       nil,
-					Log:        ctx.Log,
-					Expand:     Context{
-						ConnManage:         make([]net.Conn, ctx.Conf.(Config).PipeNum+1),
-						ConnClose:			make([]chan bool, ctx.Conf.(Config).PipeNum+1),
-						PipeConnControllor: make(chan int, ctx.Conf.(Config).PipeNum),
-						ConnNumberPool: common.NewNumberPool(uint64(ctx.Conf.(Config).PipeNum), uint64(1)),
-					},
-				}
+				es := common.UnitFactory(ctx.Conf.(Config).Protocol, ctx.Conf.(Config).IP, ctx.Conf.(Config).ExtranetPort)
+				ss := common.UnitFactory(ctx.Conf.(Config).Protocol, ctx.Conf.(Config).IP, ctx.Conf.(Config).ServerPort)
 
 				extranetServer.Register(&ctx1, &es)
 				safrpServer.Register(&ctx2, &ss)
@@ -184,54 +161,8 @@ func SafrpServer(ctx *common.Context) {
 }
 
 // 单例模式
-var extranetServer = NewSingle()
-var safrpServer = NewSingle()
-
-type single struct {
-	lock sync.Mutex
-	server map[*common.Context]common.Server
-}
-
-func NewSingle() single {
-	return single{
-		server: make(map[*common.Context]common.Server),
-	}
-}
-
-func (s *single)Register(ctx *common.Context, server *common.Server) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	s.server[ctx] = *server
-}
-
-func (s *single)Get(ctx *common.Context) common.Server {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	return s.server[ctx]
-}
-
-// 组件工厂
-func UnitFactory(protocol, ip, port string) common.Server {
-	switch protocol {
-	case "tcp":
-		return &common.TCPServer{IP:ip, Port:port}
-	case "udp":
-		return &common.UDPServer{IP:ip, Port:port}
-	case "http":
-		return &common.HTTPServer{IP: ip, Port:port}
-	}
-	return nil
-}
-
-func GetBaseProtocol(protocol string) string {
-	switch protocol {
-	case "tcp", "http":
-		return "tcp"
-	case "udp":
-		return "udp"
-	}
-	return ""
-}
+var extranetServer = common.NewSingle()
+var safrpServer = common.NewSingle()
 
 /*--------- 核心插件 -----------*/
 // TCP连接插件
