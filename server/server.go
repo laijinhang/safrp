@@ -115,7 +115,7 @@ func main() {
 
 					IP:         "",
 					Port:       "",
-					Protocol:   "",
+					Protocol:   GetBaseProtocol(confs[i].Protocol),
 					Conn:       nil,
 					Log:        ctx.Log,
 					Expand:     Context{
@@ -194,8 +194,8 @@ func (s *single)Get(ctx *common.Context) common.Server {
 }
 
 // 组件工厂
-func UnitFactory(proxy, ip, port string) common.Server {
-	switch proxy {
+func UnitFactory(protocol, ip, port string) common.Server {
+	switch protocol {
 	case "tcp":
 		return &common.TCPServer{IP:ip, Port:port}
 	case "udp":
@@ -204,6 +204,16 @@ func UnitFactory(proxy, ip, port string) common.Server {
 		return &common.HTTPServer{IP: ip, Port:port}
 	}
 	return nil
+}
+
+func GetBaseProtocol(protocol string) string {
+	switch protocol {
+	case "tcp", "http":
+		return "tcp"
+	case "udp":
+		return "udp"
+	}
+	return ""
 }
 
 /*--------- 核心插件 -----------*/
@@ -220,7 +230,7 @@ func TCPConnect(ctx *common.Context) {
 func TCPListen(ctx *common.Context)  {
 	conn, err := net.Listen(ctx.Protocol, ctx.IP + ":" + ctx.Port)
 	if err != nil {
-		ctx.Log.Panicln(err)
+		ctx.Log.Panicln(err, ctx.Protocol, ctx.Protocol, ctx.IP + ":" + ctx.Port)
 	}
 	ctx.Conn = conn
 }
