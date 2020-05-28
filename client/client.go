@@ -6,6 +6,7 @@ import (
     "log"
     "safrp/common"
     "sync"
+    "time"
 )
 
 type Config struct {
@@ -14,6 +15,8 @@ type Config struct {
     Password string
     HTTPIP string
     HTTPPort string
+    Protocol string
+    PipeNum int
 }
 
 var conf Config
@@ -40,10 +43,19 @@ func init() {
     conf.ServerPort = temp.String()
     temp, _ =cfg.Section("server").GetKey("password")
     conf.Password = temp.String()
-    temp, _ =cfg.Section("http").GetKey("ip")
+    temp, _ =cfg.Section("proxy").GetKey("ip")
     conf.HTTPIP = temp.String()
-    temp, _ =cfg.Section("http").GetKey("port")
+    temp, _ =cfg.Section("proxy").GetKey("port")
     conf.HTTPPort = temp.String()
+    temp, _ =cfg.Section("proxy").GetKey("protocol")
+    conf.Protocol = temp.String()
+    temp, _ =cfg.Section("").GetKey("pipe_num")
+    conf.PipeNum = func(v int, e error) int {
+        if e != nil {
+            panic(e)
+        }
+        return v
+    }(temp.Int())
 
     logrus.SetLevel(logrus.TraceLevel)
     logrus.SetFormatter(&logrus.TextFormatter{
@@ -72,21 +84,39 @@ func init() {
 
 func main() {
     common.Run(func() {
-        ctx := common.Context{Conf:conf}
+        ctx := common.Context{
+            Conf:       conf,
+            UnitId:     0,
+            NumberPool: nil,
+            ReadDate:   nil,
+            SendData:   nil,
+            DateLength: 0,
+            IP:         conf.ServerIP,
+            Port:       conf.ServerPort,
+            Protocol:   common.GetBaseProtocol(conf.Protocol),
+        }
 
         common.Run(func() {
             // 对safrp服务端
             SafrpClient(&ctx)
         })
-        common.Run(func() {
-            // 代理服务
-            SafrpClient(&ctx)
-        })
+        //common.Run(func() {
+        //    // 代理服务
+        //    SafrpClient(&ctx)
+        //})
     })
 }
 
-func SafrpClient(ctx *common.Context) {
+// 单例模式
+var Server = common.NewSingle()
+var safrpClient = common.NewSingle()
 
+func SafrpClient(ctx *common.Context) {
+    //connManage := make(chan int, ctx.Conf.(Config).PipeNum)
+    for {
+        common.TCPConnect(ctx)
+        time.Sleep(time.Second)
+    }
 }
 
 func ProxyClient(ctx *common.Context) {

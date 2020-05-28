@@ -131,14 +131,14 @@ func main() {
 
 func ExtranetServer(ctx *common.Context) {
 	extranetServer.Get(ctx).Server(ctx, []func(ctx *common.Context) {
-		TCPListen,
+		common.TCPListen,
 		ExtranetTCPServer,
 	})
 }
 
 func SafrpServer(ctx *common.Context) {
 	safrpServer.Get(ctx).Server(ctx, []func(ctx *common.Context) {
-		TCPListen,
+		common.TCPListen,
 	})
 	go safrpServer.Get(ctx).Server(ctx, []func(ctx *common.Context) {
 		SafrpTCPServer,
@@ -165,23 +165,6 @@ var extranetServer = common.NewSingle()
 var safrpServer = common.NewSingle()
 
 /*--------- 核心插件 -----------*/
-// TCP连接插件
-func TCPConnect(ctx *common.Context) {
-	conn, err := net.Dial(ctx.Protocol, ctx.IP + ":" + ctx.Port)
-	if err != nil {
-		ctx.Log.Panicln(err)
-	}
-	ctx.Conn = conn
-}
-
-// TCP监听插件
-func TCPListen(ctx *common.Context)  {
-	conn, err := net.Listen(ctx.Protocol, ctx.IP + ":" + ctx.Port)
-	if err != nil {
-		ctx.Log.Panicln(err, ctx.Protocol, ctx.Protocol, ctx.IP + ":" + ctx.Port)
-	}
-	ctx.Conn = conn
-}
 
 // safrp TCP对外服务插件
 func ExtranetTCPServer(ctx *common.Context) {

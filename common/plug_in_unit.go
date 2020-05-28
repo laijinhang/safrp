@@ -1,0 +1,55 @@
+package common
+
+import (
+	"fmt"
+	"net"
+)
+
+/*--------- 核心插件 -----------*/
+// TCP连接插件
+func TCPConnect(ctx *Context) {
+	fmt.Println(ctx.Protocol, ctx.IP + ":" + ctx.Port)
+	conn, err := net.Dial(ctx.Protocol, ctx.IP + ":" + ctx.Port)
+	if err != nil {
+		ctx.Log.Panicln(err)
+	}
+	ctx.Conn = conn
+	fmt.Println("连接成功")
+}
+
+// TCP监听插件
+func TCPListen(ctx *Context)  {
+	conn, err := net.Listen(ctx.Protocol, ctx.IP + ":" + ctx.Port)
+	if err != nil {
+		ctx.Log.Panicln(err, ctx.Protocol, ctx.Protocol, ctx.IP + ":" + ctx.Port)
+	}
+	ctx.Conn = conn
+}
+
+
+// 通过密码登录插件
+// 连接安全验证插件
+func checkConnectPassword(c net.Conn) bool {
+	return false
+}
+// 判断心跳包插件
+func ReadHeartbeat() {
+
+}
+// 与safrp客户端交互的数据解析插件
+func parsePackage(c net.Conn) {
+	go func() {Run(func() {
+
+	})}()
+}
+/*-------------- 功能性插件 -----------------*/
+// 限流插件
+// IP记录插件
+// 将记录写入mq中
+// 将记录写到数据库
+// 黑名单插件
+// 白名单插件
+// 插件接口
+func plugInInterface(ctx *Context) {
+
+}
