@@ -139,8 +139,15 @@ func SafrpServer(ctx *common.Context) {
 	safrpServer.Get(ctx).Server(ctx, []func(ctx *common.Context) {
 		TCPListen,
 	})
-	go safrpServer.Get(ctx).ReadServer(ctx, nil)
-	safrpServer.Get(ctx).SendServer(ctx, nil)
+	go safrpServer.Get(ctx).Server(ctx, []func(ctx *common.Context) {
+		SafrpTCPServer,
+	})
+	go safrpServer.Get(ctx).ReadServer(ctx, []func(ctx *common.Context) {
+		SafrpTCPSend,
+	})
+	safrpServer.Get(ctx).SendServer(ctx, []func(ctx *common.Context) {
+		SafrpTCPRead,
+	})
 }
 
 // 单例模式
@@ -317,7 +324,7 @@ func SafrpTCPServer(ctx *common.Context) {
 }
 
 // TCP写数据插件
-func SafrpTCPWrite(ctx *common.Context) {
+func SafrpTCPSend(ctx *common.Context) {
 	for {
 		select {
 		case data := <- ctx.ReadDate:
