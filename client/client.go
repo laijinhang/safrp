@@ -1,12 +1,13 @@
 package main
 
 import (
+    "fmt"
     "github.com/sirupsen/logrus"
     "gopkg.in/ini.v1"
     "log"
+    "net"
     "safrp/common"
     "sync"
-    "time"
 )
 
 type Config struct {
@@ -17,6 +18,9 @@ type Config struct {
     HTTPPort string
     Protocol string
     PipeNum int
+}
+
+type Context struct {
 }
 
 var conf Config
@@ -84,20 +88,33 @@ func init() {
 
 func main() {
     common.Run(func() {
+        log := logrus.New()
+        log.SetLevel(logrus.TraceLevel)
+        log.SetFormatter(&logrus.TextFormatter{
+            ForceColors:               true,
+            FullTimestamp:             true,
+            TimestampFormat:           "2006-01-02 15:04:05",
+            DisableSorting:            false,
+            SortingFunc:               nil,
+            DisableLevelTruncation:    true,
+            QuoteEmptyFields:          false,
+            FieldMap:                  nil,
+            CallerPrettyfier:          nil,
+        })
+        log.SetReportCaller(true)
+
         ctx := common.Context{
             Conf:       conf,
-            UnitId:     0,
-            NumberPool: nil,
-            ReadDate:   nil,
-            SendData:   nil,
-            DateLength: 0,
+            Conn:       make([]net.Conn, conf.PipeNum+1),
+            NumberPool: common.NewNumberPool(uint64(conf.PipeNum), uint64(1)),
             IP:         conf.ServerIP,
             Port:       conf.ServerPort,
+            Log:        log,
             Protocol:   common.GetBaseProtocol(conf.Protocol),
         }
 
         common.Run(func() {
-            // 对safrp服务端
+            // 对safrp客户端
             SafrpClient(&ctx)
         })
         //common.Run(func() {
@@ -112,12 +129,52 @@ var Server = common.NewSingle()
 var safrpClient = common.NewSingle()
 
 func SafrpClient(ctx *common.Context) {
-    //connManage := make(chan int, ctx.Conf.(Config).PipeNum)
+    connManage := make(chan int, ctx.Conf.(Config).PipeNum)
+
     for {
-        common.TCPConnect(ctx)
-        time.Sleep(time.Second)
+        connManage <- 1             // 没有达到最大隧道数
+        // 创建一个连接
+        conn, err := net.Dial(ctx.Protocol, ctx.IP + ":" + ctx.Port)
+        if err != nil {
+            ctx.Log.Println(err)
+            <-connManage
+            continue
+        }
+        id, _ := ctx.NumberPool.Get()
+        ctx.Conn.([]net.Conn)[id] = conn
+        // 管道取数据
+        go func(id uint64) {
+            defer func() {
+                for p := recover();p != nil;p = recover() {
+                    ctx.Log.Println(p)
+                }
+                ctx.Conn.([]net.Conn)[id].Close()       // 关闭连接
+                ctx.NumberPool.Put(int(id))
+                <-connManage    // 当前管道减一
+            }()
+            ctx.Conn.([]net.Conn)[id].Write([]byte(ctx.Conf.(Config).Password))  // 发送密码
+            buf := make([]byte, 1)
+            ctx.Conn.([]net.Conn)[id].Read(buf)  // 读取连接结果
+            if buf[0] == '0' {
+                ctx.Log.Println("密码错误。。。")
+                return
+            }
+            ctx.Log.Println(fmt.Sprintf("编号：%d，连接成功。。。\n", id))
+            // 取数据
+            // 数据解析
+        }(id)
     }
+    select {}
 }
 
 func ProxyClient(ctx *common.Context) {
 }
+
+// 通过密码登录插件
+func sendConnectPassword(ctx *common.Context) {
+    for i := 0;i < len(ctx.Conn.([]net.Conn));i++ {
+        ctx.Conn.([]net.Conn)[i].Read([]byte(ctx.Conf.(Config).Password))   // 发送连接密码
+    }
+}
+
+// 统一处理心跳包

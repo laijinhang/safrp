@@ -17,6 +17,7 @@ type Config struct {
 	ExtranetPort string
 	ServerPort   string
 	Protocol     string
+	Password	 string
 	PipeNum      int
 }
 
@@ -52,6 +53,7 @@ func init() {
 			ExtranetPort: pipeConf.Key("extranet_port").String(),
 			ServerPort:   pipeConf.Key("server_port").String(),
 			Protocol:     pipeConf.Key("protocol").String(),
+			Password:	  pipeConf.Key("password").String(),
 			PipeNum: func(v int, e error) int {
 				if e != nil {
 					panic(e)
@@ -147,11 +149,13 @@ func SafrpServer(ctx *common.Context) {
 	nowConnectSuccesPipeNum := len(ctx.Expand.(Context).PipeConnControllor) // 当前与safrp客户端建立的管道数
 	for ctx.Conf.(Config).PipeNum != len(ctx.Expand.(Context).PipeConnControllor) {
 		if nowConnectSuccesPipeNum != len(ctx.Expand.(Context).PipeConnControllor) {
-			time.Sleep(300 * time.Millisecond)
-		} else {
+			nowConnectSuccesPipeNum = len(ctx.Expand.(Context).PipeConnControllor)
 			ctx.Log.Infoln(fmt.Sprintf("组件: %d，当前与safrp客户端已建立的管道数：%d\n", ctx.UnitId, nowConnectSuccesPipeNum))
+		} else {
+			time.Sleep(300 * time.Millisecond)
 		}
 	}
+	ctx.Log.Infoln("管道建立完成。。。")
 	go safrpServer.Get(ctx).ReadServer(ctx, []func(ctx *common.Context) {
 		SafrpTCPSend,
 	})
@@ -261,14 +265,16 @@ func SafrpTCPServer(ctx *common.Context) {
 		ctx.Expand.(Context).PipeConnControllor <- 1		// 控制safrp客户端与safrp服务端最大连接数
 		id, _ := ctx.Expand.(Context).ConnNumberPool.Get()
 		client, err := ctx.Conn.(net.Listener).Accept()
+		ctx.Log.Infoln(fmt.Sprintf("管道：%d 连接。。。", id))
 		if err != nil {
 			ctx.Log.Errorln(err)
 		}
 		ctx.Expand.(Context).ConnManage[id] = client
 		go func(id int) {
 			defer func() {
-				ctx.Expand.(Context).ConnNumberPool.Put(id)
-				ctx.Expand.(Context).ConnManage[id] = nil
+				//ctx.Expand.(Context).ConnManage[id].Close()	// 关闭对应连接
+				ctx.Expand.(Context).ConnManage[id] = nil	// 对应连接器清空
+				ctx.Expand.(Context).ConnNumberPool.Put(id)	// 编号放回到编号池
 				<-ctx.Expand.(Context).PipeConnControllor
 			}()
 			defer func() {
@@ -277,10 +283,14 @@ func SafrpTCPServer(ctx *common.Context) {
 				}
 			}()
 			c := ctx.Expand.(Context).ConnManage[id]
-			if !checkConnectPassword(c) { // 如果配置密码不匹配，结束连接
+			ctx.Log.Infoln(fmt.Sprintf("管道：%d 验证密码。。。", id))
+			if !checkConnectPassword(c, ctx) { // 如果配置密码不匹配，结束连接
+				c.Write([]byte{'0'})
 				ctx.Log.Errorln("连接密码错误。。。")
 				return
 			}
+			c.Write([]byte{'1'})
+			ctx.Log.Infoln(fmt.Sprintf("管道：%d 建立成功。。。", id))
 			<- ctx.Expand.(Context).ConnClose[id]
 		}(int(id))
 	}
@@ -311,10 +321,20 @@ func SafrpTCPRead(ctx *common.Context) {
 }
 
 // 通过密码登录插件
+func sendConnectPassword(c net.Conn) {
+
+}
+
 // 连接安全验证插件
-func checkConnectPassword(c net.Conn) bool {
+func checkConnectPassword(c net.Conn, ctx *common.Context) bool {
+	buf := make([]byte, 1024)
+	n, _ := c.Read(buf)
+	if string(buf[:n]) == ctx.Conf.(Config).Password {
+		return true
+	}
 	return false
 }
+
 // 发送心跳包插件
 func SendHeartbeat(ctx *common.Context) {
 	n, err := ctx.Conn.(net.Conn).Write(TCPDataEnd)
@@ -323,17 +343,19 @@ func SendHeartbeat(ctx *common.Context) {
 		ctx.Log.Errorln(err)
 	}
 }
+
 // 判断心跳包插件
 func ReadHeartbeat() {
 
 }
+
 // 与safrp客户端交互的数据解析插件
 func parsePackage(c net.Conn) {
 	go func() {common.Run(func() {
 
-
 	})}()
 }
+
 /*-------------- 功能性插件 -----------------*/
 // 限流插件
 // IP记录插件

@@ -1,20 +1,18 @@
 package common
 
 import (
-	"fmt"
 	"net"
 )
 
 /*--------- 核心插件 -----------*/
 // TCP连接插件
 func TCPConnect(ctx *Context) {
-	fmt.Println(ctx.Protocol, ctx.IP + ":" + ctx.Port)
 	conn, err := net.Dial(ctx.Protocol, ctx.IP + ":" + ctx.Port)
 	if err != nil {
 		ctx.Log.Panicln(err)
+		return
 	}
-	ctx.Conn = conn
-	fmt.Println("连接成功")
+	ctx.Conn = append(ctx.Conn.([]net.Conn), conn)
 }
 
 // TCP监听插件
@@ -26,10 +24,8 @@ func TCPListen(ctx *Context)  {
 	ctx.Conn = conn
 }
 
-
-// 通过密码登录插件
 // 连接安全验证插件
-func checkConnectPassword(c net.Conn) bool {
+func checkConnectPassword(password string) bool {
 	return false
 }
 // 判断心跳包插件
