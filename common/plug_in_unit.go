@@ -33,11 +33,10 @@ func ReadHeartbeat() {
 
 }
 // 与safrp客户端交互的数据解析插件
-func parsePackage(c net.Conn) {
-	go func() {Run(func() {
+func ParsePackage(c net.Conn) {
 
-	})}()
 }
+
 /*-------------- 功能性插件 -----------------*/
 // 限流插件
 // IP记录插件

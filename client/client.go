@@ -8,6 +8,7 @@ import (
     "net"
     "safrp/common"
     "sync"
+    "time"
 )
 
 type Config struct {
@@ -130,13 +131,13 @@ var safrpClient = common.NewSingle()
 
 func SafrpClient(ctx *common.Context) {
     connManage := make(chan int, ctx.Conf.(Config).PipeNum)
-
     for {
         connManage <- 1             // 没有达到最大隧道数
         // 创建一个连接
         conn, err := net.Dial(ctx.Protocol, ctx.IP + ":" + ctx.Port)
         if err != nil {
-            ctx.Log.Println(err)
+            ctx.Log.Errorln(err)
+            time.Sleep(3 * time.Second)
             <-connManage
             continue
         }
@@ -162,6 +163,15 @@ func SafrpClient(ctx *common.Context) {
             ctx.Log.Println(fmt.Sprintf("编号：%d，连接成功。。。\n", id))
             // 取数据
             // 数据解析
+            time.Sleep(10 * time.Second)
+            for {
+                n, err := ctx.Conn.([]net.Conn)[id].Write([]byte{})
+                fmt.Println(n, err)
+                time.Sleep(time.Second)
+            }
+            select {
+
+            }
         }(id)
     }
     select {}
