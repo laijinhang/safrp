@@ -4,14 +4,32 @@ safrp（Simple and fast reverse proxy）是基于Go语言开发的一个轻量�
 
 目前正在开发v0.3.0版本
 
-[v0.2.0](https://github.com/laijinhang/safrp/releases/tag/v0.2.0)
-
-[v0.1.0](https://github.com/laijinhang/safrp/releases/tag/v0.1.0)
 ### 功能
 目前仅实现HTTP协议数据的转发
-### v0.3.0
-1. 支持一个服务端与多个客户端功能
-2. safrp客户端和safrp服务端功能插件化，可支持自定义功能开发，如：自定义限流功能、自定义IP记录、IP黑名单、IP白名单等其他自定义插件
+### v0.3.1（计划）
+1. 支持配置一个服务端与多个客户端
+
+2. 一个客户端支持配置多种服务
+
+3. safrp客户端和safrp服务端功能插件化，可支持自定义功能开发，如：自定义限流功能、自定义IP记录、IP黑名单、IP白名单等其他自定义插件
+### v0.3.0（开发中）
+1. 支持配置一个服务端与多个客户端
+
+2. 一个客户端支持配置一种服务
+
+3. safrp客户端和safrp服务端功能插件化，可支持自定义功能开发，如：自定义限流功能、自定义IP记录、IP黑名单、IP白名单等其他自定义插件
+### v0.2.0
+1. 一个服务端只能服务于一个客户端
+
+2. safrp服务端与safrp客户端支持多条连接复用
+
+[v0.2.0](https://github.com/laijinhang/safrp/releases/tag/v0.2.0)
+### v0.1.0
+1. 一个服务端只能服务于一个客户端
+
+2. safrp服务端与safrp客户端之间的通信只复用一条连接
+
+[v0.1.0](https://github.com/laijinhang/safrp/releases/tag/v0.1.0)
 
 ### 上手指南
 ##### 1. 一个服务端与一个客户端
