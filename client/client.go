@@ -27,10 +27,13 @@ type Context struct {
 	ToSafrpServer   []chan common.DataPackage
 	FromProxyServer chan common.DataPackage
 	ToProxyServer   chan common.DataPackage
+
+	ToClient []chan common.DataPackage
+	Conn []*net.Conn
 }
 
 var conf Config
-var BufSize = 1024 * 1024 * 8
+var BufSize = 1024 * 8
 var TCPDataEnd = []byte{'<', 'e', '>'}
 
 type TCPData struct {
@@ -39,7 +42,7 @@ type TCPData struct {
 }
 
 var BufPool = sync.Pool{New: func() interface{} {
-	return make([]byte, 1024*1024*8)
+	return make([]byte, 1024*8)
 }}
 
 func init() {
@@ -118,21 +121,28 @@ func main() {
 			Log:        log,
 			Protocol:   common.GetBaseProtocol(conf.Protocol),
 			Expand:Context{
-                FromSafrpServer: make([]chan common.DataPackage, conf.PipeNum),
-                ToSafrpServer:   make([]chan common.DataPackage, conf.PipeNum),
+                FromSafrpServer: make([]chan common.DataPackage, conf.PipeNum+1),
+                ToSafrpServer:   make([]chan common.DataPackage, conf.PipeNum+1),
                 FromProxyServer: make(chan common.DataPackage, 3000),
                 ToProxyServer:   make(chan common.DataPackage, 3000),
+                ToClient: make([]chan common.DataPackage, conf.PipeNum+1),
+                Conn: make([]*net.Conn, conf.PipeNum+1),
             },
 		}
+		for i := 0;i <= ctx.Conf.(Config).PipeNum;i++ {
+			ctx.Expand.(Context).FromSafrpServer[i] = make(chan common.DataPackage, 10)
+			ctx.Expand.(Context).ToClient[i] = make(chan common.DataPackage, 10)
+			ctx.Expand.(Context).ToSafrpServer[i] = make(chan common.DataPackage, 10)
+		}
 
-		common.Run(func() {
+		go common.Run(func() {
 			// 对safrp客户端
 			SafrpClient(&ctx)
 		})
-		//common.Run(func() {
-		//    // 代理服务
-		//    SafrpClient(&ctx)
-		//})
+		common.Run(func() {
+		  // 代理服务
+			ProxyClient(&ctx)
+		})
 	})
 }
 
@@ -172,7 +182,6 @@ func SafrpClient(ctx *common.Context) {
 				return
 			}
 			ctx.Log.Println(fmt.Sprintf("编号：%d，连接成功。。。\n", id))
-
 			connClose := make(chan bool)
 			FromStream := make(chan []byte, 10)
 			// 数据转发中心
@@ -184,7 +193,8 @@ func SafrpClient(ctx *common.Context) {
 				for {
 					select {
 					case pack := <-ctx.Expand.(Context).ToProxyServer:
-						ctx.Log.Infoln(fmt.Sprintf("编号：%d, Data：%s\n", pack.Number, string(pack.Data)))
+						//ctx.Log.Infoln(fmt.Sprintf("编号：%d, Data：%s\n", pack.Number, string(pack.Data)))
+						ctx.Expand.(Context).ToClient[pack.Number] <- pack
 					}
 				}
 			}()
@@ -212,12 +222,11 @@ func SafrpClient(ctx *common.Context) {
 							}
 							return
 						}
-						fmt.Println(string(buf[:n]))
 						FromStream <- buf[:n]
 					}
 				}
 			}()
-
+			//
 			sendHeartbeat := make(chan bool, 1)
 			nextSendDataTime := time.Now().Unix()
 			for {
@@ -225,12 +234,13 @@ func SafrpClient(ctx *common.Context) {
 				case <-sendHeartbeat:
 					ctx.Conn.([]net.Conn)[id].Write([]byte("<<end>>"))
 					nextSendDataTime = time.Now().Unix()
-				//case : // 发送数据
-
+				case pack := <-ctx.Expand.(Context).ToSafrpServer[id]: // 发送数据
+					ctx.Conn.([]net.Conn)[id].Write([]byte(fmt.Sprintf("%d \r\n%s%s",  pack.Number, string(pack.Data), "<<end>>")))
 				default:
 					if time.Now().Unix()-nextSendDataTime >= 60 {
 						sendHeartbeat <- true
 					}
+					time.Sleep(time.Second)
 				}
 			}
 			// 数据解析
@@ -241,6 +251,47 @@ func SafrpClient(ctx *common.Context) {
 }
 
 func ProxyClient(ctx *common.Context) {
+	wg := sync.WaitGroup{}
+	for i := 0;i < ctx.Conf.(Config).PipeNum;i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			defer func() {
+				for p := recover(); p != nil; p = recover() {
+					logrus.Println("panic:", p)
+				}
+			}()
+			for {
+				select {
+				case data := <-ctx.Expand.(Context).ToClient[id]:
+					if ctx.Expand.(Context).Conn[id] == nil {
+						conn, err := net.Dial("tcp", ctx.Conf.(Config).HTTPIP + ":" + ctx.Conf.(Config).HTTPPort)
+						if err != nil {
+							ctx.Log.Errorln(err)
+							break
+						}
+						ctx.Expand.(Context).Conn[id] = &conn
+					}
+					n, err := (*ctx.Expand.(Context).Conn[id]).Write(data.Data)
+					if err != nil {
+						ctx.Log.Errorln(err)
+						break
+					}
+					buf := make([]byte, 10240)
+					n, err = (*ctx.Expand.(Context).Conn[id]).Read(buf)
+					if err != nil {
+						ctx.Log.Errorln(err)
+						break
+					}
+					ctx.Expand.(Context).ToSafrpServer[id] <- common.DataPackage{
+						Number: data.Number,
+						Data:   buf[:n],
+					}
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
 }
 
 // 通过密码登录插件

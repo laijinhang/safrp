@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/sirupsen/logrus"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -90,7 +91,6 @@ func GetBaseProtocol(protocol string) string {
 	return ""
 }
 
-
 // 数据处理中心：safrp客户端发往safrp服务端
 // 形参：源数据流、目的数据流、一个数据的结束标识符，数据处理中心处理结束
 func DataProcessingCenter(FromStream chan []byte, ToStream chan DataPackage, DataEnd []byte, ExitChan chan bool) {
@@ -110,18 +110,24 @@ func DataProcessingCenter(FromStream chan []byte, ToStream chan DataPackage, Dat
 				} else {
 					buf = tempBuf[len(tempBuf)-1]
 				}
+
 				for i := 0;i < l;i++ {
-					fmt.Println("id:", i, string(tempBuf[i]))
 					if len(tempBuf[i]) == 0 {
-						fmt.Println("心跳包")
 						continue
 					}
+
+					tId := 0
+					temp := bytes.Split(tempBuf[i], []byte{' '})
+					tId, _ = strconv.Atoi(string(temp[0]))
+
 					go func(buf []byte, id int) {
 						ToStream <- DataPackage{
 							Number: id,
 							Data:   buf,
 						}
-					}(tempBuf[i], i)
+						fmt.Println("编号：", id)
+						fmt.Println(string(buf))
+					}(bytes.SplitN(tempBuf[i], []byte("\r\n"), 2)[1], tId)
 				}
 			}
 		}

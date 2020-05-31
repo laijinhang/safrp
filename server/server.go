@@ -31,7 +31,7 @@ type Context struct {
 }
 
 var confs []Config
-var BufSize = 1024 * 10 * 8
+var BufSize = 1024 * 100 * 8
 var BufPool = sync.Pool{New: func() interface{} { return make([]byte, BufSize) }}
 
 const (
@@ -105,6 +105,9 @@ func main() {
 					sendChan[i] = make(chan common.DataPackage)
 				}
 				connChan := make([]chan common.DataPackage, 3001)
+				for i := 0;i < 3001;i++ {
+					connChan[i] = make(chan common.DataPackage, 10)
+				}
 
 				ctx1.Expand = Context{
 					ConnManage:         make([]net.Conn, ctx.Conf.(Config).PipeNum+1),
@@ -130,22 +133,6 @@ func main() {
 					// 对外
 					ExtranetServer(&ctx1)
 				})
-				//go func() {	// 测试
-				//	var number int
-				//	var buf string
-				//	for {
-				//		fmt.Print("输入编号：")
-				//		fmt.Scan(&number)
-				//		fmt.Print("输入数据：")
-				//		fmt.Scan(&buf)
-				//		fmt.Println("发送", number % ctx.Conf.(Config).PipeNum)
-				//
-				//		ctx2.Expand.(Context).SafrpSendChan[number % ctx.Conf.(Config).PipeNum] <- common.DataPackage{
-				//			Number: number,
-				//			Data:   []byte(buf)}
-				//		fmt.Println("阻塞结束")
-				//	}
-				//}()
 				go common.Run(func() {
 					ctxExit, chanExit := context.WithCancel(context.Background())
 					defer func() {
@@ -230,12 +217,13 @@ func ExtranetTCPServer(ctx *common.Context) {
 							if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
 								continue
 							}
+							ctx.Log.Errorln(err)
 							return
 						}
 						// 向管道分发请求
 						ctx.Expand.(Context).SafrpSendChan[num % ctx.Conf.(Config).PipeNum] <- common.DataPackage{
 							Number: num,
-							Data:   buf[:n]}
+							Data:   []byte(fmt.Sprintf("%d %s\r\n%s%s", num, client.RemoteAddr(), string(buf[:n]), DataEnd))}
 					}
 				}
 			}()
@@ -244,7 +232,6 @@ func ExtranetTCPServer(ctx *common.Context) {
 				defer func() {
 					connClose <- true
 				}()
-				fmt.Println(len(ctx.Expand.(Context).ConnDataChan))
 				for {
 					select {
 					case <-connClose:
@@ -258,10 +245,10 @@ func ExtranetTCPServer(ctx *common.Context) {
 						}
 						n, err := client.Write(data.Data)
 						if err != nil {
-							ctx.Log.Errorln(err)
 							if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
 								continue
 							}
+							ctx.Log.Errorln(err)
 							return
 						}
 						if n != len(data.Data) {
@@ -324,7 +311,7 @@ func SafrpTCPServer(ctx *common.Context) {
 					defer c.Close()
 
 					var err error
-					buf := make([]byte, 1024)
+					buf := make([]byte, 1 << 23 )
 					for {
 						err = c.SetReadDeadline(time.Now().Add(60 * time.Second))
 						if err != nil {
@@ -334,11 +321,11 @@ func SafrpTCPServer(ctx *common.Context) {
 						}
 						n, err := c.Read(buf)
 						if err != nil {
-							ctx.Log.Errorln(err)
 							if neterr, ok := err.(net.Error);(ok && neterr.Timeout()) || err == io.EOF {
 								ctx.Log.Errorln(neterr, err)
 								continue
 							}
+							ctx.Log.Errorln(err)
 							return
 						}
 						FromStream <- buf[:n] // 发往数据处理中心
@@ -346,20 +333,17 @@ func SafrpTCPServer(ctx *common.Context) {
 				}()
 				// 向safrp客户端写数据
 				for {
-					fmt.Println("启动")
 					select {
 					case <-ctx.Expand.(Context).ConnClose[id % ctx.Conf.(Config).PipeNum]:
-						fmt.Println("退出")
 						return
 					case data := <-ctx.Expand.(Context).SafrpSendChan[id % ctx.Conf.(Config).PipeNum]:
-						fmt.Println(data)
 						//_, err = c.Write([]byte(fmt.Sprintf("%d %s\n%s%s", data.Number, "ip", string(data.Data), DataEnd)))
 						_, err = c.Write([]byte(data.Data))
 						if err != nil {
-							ctx.Log.Errorln(err)
 							if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
 								continue
 							}
+							ctx.Log.Errorln(err)
 							return
 						}
 					}
