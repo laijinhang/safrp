@@ -1,6 +1,9 @@
 package common
 
-import "github.com/sirupsen/logrus"
+import (
+	"context"
+	"github.com/sirupsen/logrus"
+)
 
 type Context struct {
 	Conf       interface{}
@@ -15,4 +18,5 @@ type Context struct {
 	Conn       interface{}
 	Log 	  *logrus.Logger
 	Expand	   interface{}
+	Ctx 	   context.Context
 }

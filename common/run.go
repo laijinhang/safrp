@@ -1,6 +1,8 @@
 package common
 
 import (
+	"bytes"
+	"fmt"
 	"github.com/sirupsen/logrus"
 	"sync"
 	"time"
@@ -86,4 +88,42 @@ func GetBaseProtocol(protocol string) string {
 		return "udp"
 	}
 	return ""
+}
+
+
+// 数据处理中心：safrp客户端发往safrp服务端
+// 形参：源数据流、目的数据流、一个数据的结束标识符，数据处理中心处理结束
+func DataProcessingCenter(FromStream chan []byte, ToStream chan DataPackage, DataEnd []byte, ExitChan chan bool) {
+	buf := []byte{}
+	for {
+		select {
+		case <-ExitChan:
+			return
+		case stream := <- FromStream:
+			buf = append(buf, stream...)
+			for i := bytes.Index(buf, DataEnd);i != -1;i = bytes.Index(buf, DataEnd) {
+				tempBuf := bytes.Split(buf, DataEnd)
+				l := len(tempBuf) - 1
+				if bytes.HasSuffix(buf, DataEnd) {
+					buf = nil
+					l++
+				} else {
+					buf = tempBuf[len(tempBuf)-1]
+				}
+				for i := 0;i < l;i++ {
+					fmt.Println("id:", i, string(tempBuf[i]))
+					if len(tempBuf[i]) == 0 {
+						fmt.Println("心跳包")
+						continue
+					}
+					go func(buf []byte, id int) {
+						ToStream <- DataPackage{
+							Number: id,
+							Data:   buf,
+						}
+					}(tempBuf[i], i)
+				}
+			}
+		}
+	}
 }
