@@ -193,6 +193,14 @@ func ExtranetTCPServer(ctx *common.Context) {
 					return
 				}
 			}
+			defer func(number int) {
+				// 通知safrp客户端，该临时编号已被回收
+				ctx.Log.Infoln("编号：", num, "连接关闭")
+				ctx.Expand.(Context).SafrpSendChan[num % ctx.Conf.(Config).PipeNum] <- common.DataPackage{
+					Number: num,
+					Data:   []byte(fmt.Sprintf("%d %s close\r\n%s", num, client.RemoteAddr() , DataEnd))}
+				ctx.NumberPool.Put(number)
+			}(num)
 
 			connClose := make(chan bool, 2)
 			// 读
@@ -223,7 +231,7 @@ func ExtranetTCPServer(ctx *common.Context) {
 						// 向管道分发请求
 						ctx.Expand.(Context).SafrpSendChan[num % ctx.Conf.(Config).PipeNum] <- common.DataPackage{
 							Number: num,
-							Data:   []byte(fmt.Sprintf("%d %s\r\n%s%s", num, client.RemoteAddr(), string(buf[:n]), DataEnd))}
+							Data:   []byte(fmt.Sprintf("%d %s open\r\n%s%s", num, client.RemoteAddr(), string(buf[:n]), DataEnd))}
 					}
 				}
 			}()

@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"safrp/common"
+	"strings"
 	"sync"
 	"time"
 )
@@ -194,7 +195,7 @@ func SafrpClient(ctx *common.Context) {
 					select {
 					case pack := <-ctx.Expand.(Context).ToProxyServer:
 						//ctx.Log.Infoln(fmt.Sprintf("编号：%d, Data：%s\n", pack.Number, string(pack.Data)))
-						ctx.Expand.(Context).ToClient[pack.Number] <- pack
+						ctx.Expand.(Context).ToClient[pack.Number%ctx.Conf.(Config).PipeNum] <- pack
 					}
 				}
 			}()
@@ -235,7 +236,7 @@ func SafrpClient(ctx *common.Context) {
 					ctx.Conn.([]net.Conn)[id].Write([]byte("<<end>>"))
 					nextSendDataTime = time.Now().Unix()
 				case pack := <-ctx.Expand.(Context).ToSafrpServer[id]: // 发送数据
-					ctx.Conn.([]net.Conn)[id].Write([]byte(fmt.Sprintf("%d \r\n%s%s",  pack.Number, string(pack.Data), "<<end>>")))
+					ctx.Conn.([]net.Conn)[id].Write([]byte(fmt.Sprintf("%d %s %s\r\n%s%s",  pack.Number, "1", pack.Status, string(pack.Data), "<<end>>")))
 				default:
 					if time.Now().Unix()-nextSendDataTime >= 60 {
 						sendHeartbeat <- true
@@ -264,7 +265,12 @@ func ProxyClient(ctx *common.Context) {
 			for {
 				select {
 				case data := <-ctx.Expand.(Context).ToClient[id]:
-					if ctx.Expand.(Context).Conn[id] == nil {
+				if strings.Index(data.Status, "close") != -1 {
+					ctx.Log.Infoln("编号：", data.Number, "连接关闭")
+					ctx.Expand.(Context).Conn[id] = nil
+					continue
+				}
+				if ctx.Expand.(Context).Conn[id] == nil {
 						conn, err := net.Dial("tcp", ctx.Conf.(Config).HTTPIP + ":" + ctx.Conf.(Config).HTTPPort)
 						if err != nil {
 							ctx.Log.Errorln(err)
@@ -274,7 +280,6 @@ func ProxyClient(ctx *common.Context) {
 					}
 					n, err := (*ctx.Expand.(Context).Conn[id]).Write(data.Data)
 					if err != nil {
-						ctx.Log.Errorln(err)
 						break
 					}
 					buf := make([]byte, 10240)
@@ -285,6 +290,7 @@ func ProxyClient(ctx *common.Context) {
 					}
 					ctx.Expand.(Context).ToSafrpServer[id] <- common.DataPackage{
 						Number: data.Number,
+						Status:"open",
 						Data:   buf[:n],
 					}
 				}
