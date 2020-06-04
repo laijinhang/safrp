@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"safrp/common"
+	"strings"
 	"sync"
 	"time"
 )
@@ -222,7 +223,7 @@ func ExtranetTCPServer(ctx *common.Context) {
 						}
 						n, err := client.Read(buf)
 						if err != nil {
-							if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
+							if neterr, ok := err.(net.Error);(ok && neterr.Timeout()) || err == io.EOF {
 								continue
 							}
 							ctx.Log.Errorln(err)
@@ -245,6 +246,11 @@ func ExtranetTCPServer(ctx *common.Context) {
 					case <-connClose:
 						return
 					case data := <-ctx.Expand.(Context).ConnDataChan[num]:
+						ctx.Log.Infoln(strings.Index(string(data.Data), "HTTP/1.1 200 OK"), data.Status)
+						ctx.Log.Infoln(len(data.Data), string(data.Data)[:30])
+						if len(data.Data) == 0 {
+							continue
+						}
 						// 有数据来的话，就一直写，直到连接关闭
 						err := client.SetWriteDeadline(time.Now().Add(time.Second))
 						if err != nil {
@@ -253,7 +259,7 @@ func ExtranetTCPServer(ctx *common.Context) {
 						}
 						n, err := client.Write(data.Data)
 						if err != nil {
-							if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
+							if neterr, ok := err.(net.Error);(ok && neterr.Timeout()) || err == io.EOF {
 								continue
 							}
 							ctx.Log.Errorln(err)
@@ -330,7 +336,6 @@ func SafrpTCPServer(ctx *common.Context) {
 						n, err := c.Read(buf)
 						if err != nil {
 							if neterr, ok := err.(net.Error);(ok && neterr.Timeout()) || err == io.EOF {
-								ctx.Log.Errorln(neterr, err)
 								continue
 							}
 							ctx.Log.Errorln(err)
