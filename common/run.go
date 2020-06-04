@@ -112,22 +112,30 @@ func DataProcessingCenter(FromStream chan []byte, ToStream chan DataPackage, Dat
 				}
 
 				for i := 0;i < l;i++ {
+
+					fmt.Println(string(tempBuf[i]))
 					if len(tempBuf[i]) == 0 {
 						continue
 					}
 
 					tId := 0
 					temp := bytes.Split(tempBuf[i], []byte{' '})
+					fmt.Println(string(tempBuf[i]), string(temp[0]), string(temp[1]), string(temp[2]))
 					tId, _ = strconv.Atoi(string(temp[0]))
 
-					go func(buf []byte, id int) {
+					tB := []byte{}
+					if len(bytes.SplitN(tempBuf[i], []byte("\r\n"), 2)) == 1 {
+						tB = tempBuf[i]
+					} else {
+						tB = (bytes.SplitN(tempBuf[i], []byte("\r\n"), 2))[1]
+					}
+					go func( id int, buf []byte, status string) {
 						ToStream <- DataPackage{
 							Number: id,
 							Data:   buf,
+							Status: status,
 						}
-						fmt.Println("编号：", id)
-						fmt.Println(string(buf))
-					}(bytes.SplitN(tempBuf[i], []byte("\r\n"), 2)[1], tId)
+					}(tId, tB, string(temp[2]))
 				}
 			}
 		}
