@@ -8,7 +8,6 @@ import (
 	"io"
 	"net"
 	"safrp/common"
-	"strings"
 	"sync"
 	"time"
 )
@@ -79,12 +78,7 @@ func main() {
 					ForceColors:            true,
 					FullTimestamp:          true,
 					TimestampFormat:        "2006-01-02 15:04:05",
-					DisableSorting:         false,
-					SortingFunc:            nil,
 					DisableLevelTruncation: true,
-					QuoteEmptyFields:       false,
-					FieldMap:               nil,
-					CallerPrettyfier:       nil,
 				})
 				log.SetReportCaller(true)
 				log.Printf("启动pipe%d\n", i+1)
@@ -203,17 +197,22 @@ func ExtranetTCPServer(ctx *common.Context) {
 				ctx.NumberPool.Put(number)
 			}(num)
 
-			connClose := make(chan bool, 2)
+			connCloseRead, cancelRead := context.WithCancel(context.Background())
+			connCloseWrite, cancelWrite := context.WithCancel(context.Background())
+
+			wg := sync.WaitGroup{}
+			wg.Add(2)
 			// 读
 			go func() {
 				buf := BufPool.Get().([]byte)
 				defer func() {
 					BufPool.Put(buf)
-					connClose <- true
+					cancelWrite()
+					wg.Done()
 				}()
 				for {
 					select {
-					case <-connClose:
+					case <-connCloseRead.Done():
 						return
 					default:
 						// 一直读，直到连接关闭
@@ -223,6 +222,9 @@ func ExtranetTCPServer(ctx *common.Context) {
 						}
 						n, err := client.Read(buf)
 						if err != nil {
+							if err == io.EOF {
+								return
+							}
 							if neterr, ok := err.(net.Error);(ok && neterr.Timeout()) || err == io.EOF {
 								continue
 							}
@@ -237,17 +239,16 @@ func ExtranetTCPServer(ctx *common.Context) {
 				}
 			}()
 			// 写
-			func() {
+			go func() {
 				defer func() {
-					connClose <- true
+					cancelRead()
+					wg.Done()
 				}()
 				for {
 					select {
-					case <-connClose:
+					case <-connCloseWrite.Done():
 						return
-					case data := <-ctx.Expand.(Context).ConnDataChan[num]:
-						ctx.Log.Infoln(strings.Index(string(data.Data), "HTTP/1.1 200 OK"), data.Status)
-						ctx.Log.Infoln(len(data.Data), string(data.Data)[:30])
+					case data := <-ctx.Expand.(Context).ConnDataChan[num % ctx.Conf.(Config).PipeNum]:
 						if len(data.Data) == 0 {
 							continue
 						}
@@ -259,6 +260,9 @@ func ExtranetTCPServer(ctx *common.Context) {
 						}
 						n, err := client.Write(data.Data)
 						if err != nil {
+							if err == io.EOF {
+								return
+							}
 							if neterr, ok := err.(net.Error);(ok && neterr.Timeout()) || err == io.EOF {
 								continue
 							}
@@ -271,6 +275,7 @@ func ExtranetTCPServer(ctx *common.Context) {
 					}
 				}
 			}()
+			wg.Wait()
 		}(client)
 	}
 }
@@ -351,12 +356,12 @@ func SafrpTCPServer(ctx *common.Context) {
 						return
 					case data := <-ctx.Expand.(Context).SafrpSendChan[id % ctx.Conf.(Config).PipeNum]:
 						//_, err = c.Write([]byte(fmt.Sprintf("%d %s\n%s%s", data.Number, "ip", string(data.Data), DataEnd)))
-						_, err = c.Write([]byte(data.Data))
+						_, err = c.Write(data.Data)
 						if err != nil {
-							if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
+							ctx.Log.Errorln(err)
+							if neterr, ok := err.(net.Error); (ok && neterr.Timeout()) || err == io.EOF {
 								continue
 							}
-							ctx.Log.Errorln(err)
 							return
 						}
 					}

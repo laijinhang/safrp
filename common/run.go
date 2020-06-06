@@ -2,7 +2,6 @@ package common
 
 import (
 	"bytes"
-	"fmt"
 	"github.com/sirupsen/logrus"
 	"strconv"
 	"sync"
@@ -101,42 +100,42 @@ func DataProcessingCenter(FromStream chan []byte, ToStream chan DataPackage, Dat
 			return
 		case stream := <- FromStream:
 			buf = append(buf, stream...)
+			logrus.Infoln(string(buf))
 			for i := bytes.Index(buf, DataEnd);i != -1;i = bytes.Index(buf, DataEnd) {
-				tempBuf := bytes.Split(buf, DataEnd)
-				l := len(tempBuf) - 1
+				tempBuf := bytes.SplitN(buf, DataEnd, 2)
 				if bytes.HasSuffix(buf, DataEnd) {
 					buf = nil
-					l++
 				} else {
-					buf = tempBuf[len(tempBuf)-1]
+					buf = tempBuf[1]
 				}
 
-				for i := 0;i < l;i++ {
-
-					fmt.Println(string(tempBuf[i]))
-					if len(tempBuf[i]) == 0 {
-						continue
-					}
-
-					tId := 0
-					temp := bytes.Split(tempBuf[i], []byte{' '})
-					fmt.Println(string(tempBuf[i]), string(temp[0]), string(temp[1]), string(temp[2]))
-					tId, _ = strconv.Atoi(string(temp[0]))
-
-					tB := []byte{}
-					if len(bytes.SplitN(tempBuf[i], []byte("\r\n"), 2)) == 1 {
-						tB = tempBuf[i]
-					} else {
-						tB = (bytes.SplitN(tempBuf[i], []byte("\r\n"), 2))[1]
-					}
-					go func( id int, buf []byte, status string) {
-						ToStream <- DataPackage{
-							Number: id,
-							Data:   buf,
-							Status: status,
-						}
-					}(tId, tB, string(temp[2]))
+				if len(tempBuf[0]) == 0 {
+					continue
 				}
+
+				tId := 0
+				temp := bytes.Split(tempBuf[0], []byte{' '})
+				tId, _ = strconv.Atoi(string(temp[0]))
+
+				tB := []byte{}
+				if len(bytes.SplitN(tempBuf[0], []byte("\r\n"), 2)) == 1 {
+					tB = []byte{}
+				} else {
+					tB = (bytes.SplitN(tempBuf[0], []byte("\r\n"), 2))[1]
+				}
+				status := "open"
+				if len(temp) >= 3 {
+					if bytes.HasPrefix(temp[2], []byte("close")) {
+						status = "close"
+					}
+				}
+				go func( id int, buf []byte, status string) {
+					ToStream <- DataPackage{
+						Number: id,
+						Data:   buf,
+						Status: status,
+					}
+				}(tId, tB, status)
 			}
 		}
 	}
