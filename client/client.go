@@ -30,6 +30,7 @@ type Context struct {
 	ToProxyServer   chan common.DataPackage
 
 	ToClient []chan common.DataPackage
+	ReadConn []*func()
 	Conn []*net.Conn
 }
 
@@ -104,12 +105,7 @@ func main() {
 			ForceColors:            true,
 			FullTimestamp:          true,
 			TimestampFormat:        "2006-01-02 15:04:05",
-			DisableSorting:         false,
-			SortingFunc:            nil,
 			DisableLevelTruncation: true,
-			QuoteEmptyFields:       false,
-			FieldMap:               nil,
-			CallerPrettyfier:       nil,
 		})
 		log.SetReportCaller(true)
 
@@ -128,6 +124,7 @@ func main() {
                 ToProxyServer:   make(chan common.DataPackage, 3000),
                 ToClient: make([]chan common.DataPackage, conf.PipeNum+1),
                 Conn: make([]*net.Conn, conf.PipeNum+1),
+                ReadConn: make([]*func(), conf.PipeNum+1),
             },
 		}
 		for i := 0;i <= ctx.Conf.(Config).PipeNum;i++ {
@@ -218,7 +215,7 @@ func SafrpClient(ctx *common.Context) {
 						}
 						n, err := ctx.Conn.([]net.Conn)[id].Read(buf)
 						if err != nil {
-							if neterr, ok := err.(net.Error); ok && (neterr.Timeout() || err == io.EOF) {
+							if neterr, ok := err.(net.Error); (ok && neterr.Timeout()) || err == io.EOF {
 								continue
 							}
 							return
@@ -233,10 +230,30 @@ func SafrpClient(ctx *common.Context) {
 			for {
 				select {
 				case <-sendHeartbeat:
-					ctx.Conn.([]net.Conn)[id].Write([]byte("<<end>>"))
+					err := ctx.Conn.([]net.Conn)[id].SetWriteDeadline(time.Now().Add(time.Second))
+					if err != nil {
+						return
+					}
+					_, err = ctx.Conn.([]net.Conn)[id].Write([]byte("<<end>>"))
+					if err != nil {
+						if neterr, ok := err.(net.Error); (ok && neterr.Timeout()) || err == io.EOF {
+							continue
+						}
+						return
+					}
 					nextSendDataTime = time.Now().Unix()
 				case pack := <-ctx.Expand.(Context).ToSafrpServer[id]: // 发送数据
-					ctx.Conn.([]net.Conn)[id].Write([]byte(fmt.Sprintf("%d %s %s\r\n%s%s",  pack.Number, "1", pack.Status, string(pack.Data), "<<end>>")))
+					err := ctx.Conn.([]net.Conn)[id].SetWriteDeadline(time.Now().Add(time.Second))
+					if err != nil {
+						return
+					}
+					_, err = ctx.Conn.([]net.Conn)[id].Write([]byte(fmt.Sprintf("%d %s %s\r\n%s%s",  pack.Number, "1", pack.Status, string(pack.Data), "<<end>>")))
+					if err != nil {
+						if neterr, ok := err.(net.Error); (ok && neterr.Timeout()) || err == io.EOF {
+							continue
+						}
+						return
+					}
 				default:
 					if time.Now().Unix()-nextSendDataTime >= 60 {
 						sendHeartbeat <- true
@@ -262,16 +279,18 @@ func ProxyClient(ctx *common.Context) {
 					logrus.Println("panic:", p)
 				}
 			}()
+
 			for {
 				select {
 				case data := <-ctx.Expand.(Context).ToClient[id]:
-				if strings.Index(data.Status, "close") != -1 {
-					ctx.Log.Infoln("编号：", data.Number, "连接关闭")
-					ctx.Expand.(Context).Conn[id] = nil
-					continue
-				}
-				if ctx.Expand.(Context).Conn[id] == nil {
-						conn, err := net.Dial("tcp", ctx.Conf.(Config).HTTPIP + ":" + ctx.Conf.(Config).HTTPPort)
+					if strings.Index(data.Status, "close") != -1 {
+						ctx.Expand.(Context).ReadConn[data.Number] = nil
+						ctx.Log.Infoln("编号：", data.Number, "连接关闭")
+						ctx.Expand.(Context).Conn[id] = nil
+						continue
+					}
+					if ctx.Expand.(Context).Conn[id] == nil {
+						conn, err := net.Dial("tcp", ctx.Conf.(Config).HTTPIP+":"+ctx.Conf.(Config).HTTPPort)
 						if err != nil {
 							ctx.Log.Errorln(err)
 							break
@@ -280,18 +299,58 @@ func ProxyClient(ctx *common.Context) {
 					}
 					n, err := (*ctx.Expand.(Context).Conn[id]).Write(data.Data)
 					if err != nil {
-						break
-					}
-					buf := make([]byte, 10240)
-					n, err = (*ctx.Expand.(Context).Conn[id]).Read(buf)
-					if err != nil {
 						ctx.Log.Errorln(err)
 						break
 					}
-					ctx.Expand.(Context).ToSafrpServer[id] <- common.DataPackage{
-						Number: data.Number,
-						Status:"open",
-						Data:   buf[:n],
+					if n != len(data.Data) {
+						ctx.Log.Errorln(n, "!=", len(data.Data))
+					}
+					ctx.Log.Infoln(ctx.Expand.(Context).ReadConn[data.Number] == nil)
+					if ctx.Expand.(Context).ReadConn[data.Number] == nil {
+						// 为什么注释的这一段代码是会锁死？？？
+						//*(ctx.Expand.(Context).ReadConn[data.Number]) = func() {
+						//	ctx.Log.Printf("编号：%d启动读。。。\n", data.Number)
+						//	defer ctx.Log.Printf("编号：%d结束读。。。\n", data.Number)
+						//	for {
+						//		if ctx.Expand.(Context).ReadConn[data.Number] == nil {
+						//			return
+						//		}
+						//		buf := make([]byte, 10240)
+						//		n, err := (*ctx.Expand.(Context).Conn[id]).Read(buf)
+						//		if err != nil {
+						//			ctx.Log.Errorln(err)
+						//			break
+						//		}
+						//		ctx.Expand.(Context).ToSafrpServer[id] <- common.DataPackage{
+						//			Number: data.Number,
+						//			Status: "open",
+						//			Data:   buf[:n],
+						//		}
+						//	}
+						//}
+						f1 := func() {
+							ctx.Log.Printf("编号：%d启动读。。。\n", data.Number)
+							defer ctx.Log.Printf("编号：%d结束读。。。\n", data.Number)
+							for {
+								if ctx.Expand.(Context).ReadConn[data.Number] == nil {
+									return
+								}
+								buf := make([]byte, 10240)
+								n, err := (*ctx.Expand.(Context).Conn[id]).Read(buf)
+								if err != nil {
+									ctx.Log.Errorln(err)
+									break
+								}
+								ctx.Expand.(Context).ToSafrpServer[id] <- common.DataPackage{
+									Number: data.Number,
+									Status: "open",
+									Data:   buf[:n],
+								}
+							}
+						}
+						ctx.Expand.(Context).ReadConn[data.Number] = &f1
+						ctx.Log.Infoln((*(ctx.Expand.(Context).ReadConn[data.Number])))
+						go (*(ctx.Expand.(Context).ReadConn[data.Number]))()
 					}
 				}
 			}
