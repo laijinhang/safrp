@@ -38,20 +38,22 @@ var conf Config
 var BufSize = 1024 * 8
 var TCPDataEnd = []byte{'<', 'e', '>'}
 
-type TCPData struct {
-	ConnId int
-	Data   []byte
-}
-
 var BufPool = sync.Pool{New: func() interface{} {
 	return make([]byte, 1024*8)
 }}
 
-func init() {
+/**
+ * 加载safrp服务端配置文件
+ * @param		nil
+ * @return		nil
+ * func loadConfig();
+ */
+func loadConfig() {
 	cfg, err := ini.Load("./safrp.ini")
 	if err != nil {
 		log.Fatal("Fail to read file: ", err)
 	}
+
 	temp, _ := cfg.Section("server").GetKey("ip")
 	conf.ServerIP = temp.String()
 	temp, _ = cfg.Section("server").GetKey("port")
@@ -77,12 +79,7 @@ func init() {
 		ForceColors:            true,
 		FullTimestamp:          true,
 		TimestampFormat:        "2006-01-02 15:04:05",
-		DisableSorting:         false,
-		SortingFunc:            nil,
 		DisableLevelTruncation: true,
-		QuoteEmptyFields:       false,
-		FieldMap:               nil,
-		CallerPrettyfier:       nil,
 	})
 	logrus.SetReportCaller(true)
 
@@ -98,6 +95,7 @@ func init() {
 }
 
 func main() {
+	loadConfig()
 	common.Run(func() {
 		log := logrus.New()
 		log.SetLevel(logrus.TraceLevel)
@@ -116,7 +114,7 @@ func main() {
 			IP:         conf.ServerIP,
 			Port:       conf.ServerPort,
 			Log:        log,
-			Protocol:   common.GetBaseProtocol(conf.Protocol),
+			Protocol:   common.GetL3Protocol(conf.Protocol),
 			Expand:Context{
                 FromSafrpServer: make([]chan common.DataPackage, conf.PipeNum+1),
                 ToSafrpServer:   make([]chan common.DataPackage, conf.PipeNum+1),

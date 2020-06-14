@@ -90,7 +90,7 @@ func main() {
 					SendData:   make(chan common.DataPackage, 1000),
 					ReadDate:   make(chan common.DataPackage, 1000),
 					Log:        log,
-					Protocol:   common.GetBaseProtocol(confs[i].Protocol),
+					Protocol:   common.GetL3Protocol(confs[i].Protocol),
 				}
 				ctx1 := ctx
 				ctx2 := ctx
