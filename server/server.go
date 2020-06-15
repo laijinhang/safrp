@@ -43,7 +43,7 @@ const (
 
 var TCPDataEnd = []byte{'<', 'e', '>'}
 
-func init() {
+func loadConfig() {
 	cfg, err := ini.Load("./safrp.ini")
 	if err != nil {
 		logrus.Fatal("Fail to read file: ", err)
@@ -68,6 +68,7 @@ func init() {
 }
 
 func main() {
+	loadConfig()
 	common.Run(func() {
 		// 启动 pipe组件
 		for i := 0; i < len(confs); i++ {

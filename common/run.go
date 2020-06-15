@@ -130,7 +130,6 @@ func GetL3Protocol(protocol string) string {
 	return ""
 }
 
-//
 /**
  * 解析safrp客户端与safrp服务端之间的数据通信
  * @param		fromStream chan []byte, toStream chan DataPackage, dataEnd []byte, exitChan chan bool

@@ -363,5 +363,3 @@ func sendConnectPassword(ctx *common.Context) {
 		ctx.Conn.([]net.Conn)[i].Read([]byte(ctx.Conf.(Config).Password)) // 发送连接密码
 	}
 }
-
-// 统一处理心跳包
