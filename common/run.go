@@ -27,7 +27,7 @@ func initLogConfig() {
 }
 
 var onceExecFunc sync.Once
-var restartTime = time.Duration(1)
+var restartWaitTime = time.Duration(1)
 
 /**
  * 支持panic重启的函数运行
@@ -37,11 +37,11 @@ var restartTime = time.Duration(1)
  */
 func Run(server func()) {
 	onceExecFunc.Do(initLogConfig)
-	resertRun := sync.WaitGroup{}
+	resertWaitRun := sync.WaitGroup{}
 	for {
-		resertRun.Add(1)
+		resertWaitRun.Add(1)
 		go func() {
-			defer resertRun.Done()
+			defer resertWaitRun.Done()
 			defer func() {
 				for p := recover(); p != nil; p = recover() {
 					logrus.Println("panic:", p)
@@ -49,8 +49,8 @@ func Run(server func()) {
 			}()
 			server()
 		}()
-		resertRun.Wait()
-		time.Sleep(restartTime * time.Second)
+		resertWaitRun.Wait()
+		time.Sleep(restartWaitTime * time.Second)
 	}
 }
 
@@ -61,7 +61,7 @@ type single struct {
 }
 
 /**
- * 创建一个单利模式
+ * 创建一个单例模式
  * @param		nil
  * @return		nil
  * func NewSingle() single;
