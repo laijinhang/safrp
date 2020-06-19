@@ -122,7 +122,7 @@ func main() {
                 ToProxyServer:   make(chan common.DataPackage, 3000),
                 ToClient: make([]chan common.DataPackage, conf.PipeNum+1),
                 Conn: make([]*net.Conn, conf.PipeNum+1),
-                ReadConn: make([]*func(), conf.PipeNum+1),
+                ReadConn: make([]*func(), 3000),
             },
 		}
 		for i := 0;i <= ctx.Conf.(Config).PipeNum;i++ {
