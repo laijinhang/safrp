@@ -125,11 +125,11 @@ func main() {
 				extranetServer.Register(&ctx1, &es)
 				safrpServer.Register(&ctx2, &ss)
 
-				go common.Run(func() {
+				func() {
 					// 对外
 					ExtranetServer(&ctx1)
-				})
-				go common.Run(func() {
+				}()
+				func() {
 					ctxExit, chanExit := context.WithCancel(context.Background())
 					defer func() {
 						chanExit()	// 通知该服务下的所有协程退出
@@ -137,7 +137,7 @@ func main() {
 					ctx2.Ctx = ctxExit
 					// 对safrp客户端
 					SafrpServer(&ctx2)
-				})
+				}()
 			}(i)
 		}
 		select {}
@@ -174,6 +174,11 @@ func ExtranetTCPServer(ctx *common.Context) {
 			continue
 		}
 		go func(client net.Conn) {
+			defer func() {
+				for p := recover();p != nil;p = recover() {
+					ctx.Log.Println(p)
+				}
+			}()
 			defer client.Close()
 
 			num := -1
