@@ -125,7 +125,7 @@ func main() {
 				extranetServer.Register(&ctx1, &es)
 				safrpServer.Register(&ctx2, &ss)
 
-				func() {
+				go func() {
 					// 对外
 					ExtranetServer(&ctx1)
 				}()
