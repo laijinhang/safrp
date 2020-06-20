@@ -1,7 +1,9 @@
 package common
 
 import (
+	"fmt"
 	"sync/atomic"
+	"time"
 )
 
 type NumberPool struct {
@@ -18,12 +20,25 @@ type NumberPool struct {
  * func NewNumberPool(maxVal, add uint64) *NumberPool;
  */
 func NewNumberPool(maxVal, add uint64) *NumberPool {
-	return &NumberPool{
+	p := &NumberPool{
 		numberArr:make([]uint64, maxVal+1),
 		number: 1,
 		maxVal: maxVal,
 		add:    add,
 	}
+	go func() {
+		for {
+			time.Sleep(5 * time.Second)
+			num := 0
+			for i := 0;i < int(maxVal);i++ {
+				if p.numberArr[i] == 0 {
+					num++
+				}
+			}
+			fmt.Println("当前可用：", num)
+		}
+	}()
+	return p
 }
 
 /**

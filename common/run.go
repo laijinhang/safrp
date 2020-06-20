@@ -145,7 +145,7 @@ func DataProcessingCenter(fromStream chan []byte, toStream chan DataPackage, dat
 			return
 		case stream := <- fromStream:
 			buf = append(buf, stream...)
-			logrus.Infoln(string(buf))
+			//logrus.Infoln(string(buf))
 			for i := bytes.Index(buf, dataEnd);i != -1;i = bytes.Index(buf, dataEnd) {
 				tempBuf := bytes.SplitN(buf, dataEnd, 2)
 				buf = nil

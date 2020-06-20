@@ -105,7 +105,7 @@ func main() {
 			TimestampFormat:        "2006-01-02 15:04:05",
 			DisableLevelTruncation: true,
 		})
-		log.SetReportCaller(true)
+		//log.SetReportCaller(true)
 
 		ctx := common.Context{
 			Conf:       conf,
@@ -305,35 +305,19 @@ func ProxyClient(ctx *common.Context) {
 					}
 					ctx.Log.Infoln(ctx.Expand.(Context).ReadConn[data.Number] == nil)
 					if ctx.Expand.(Context).ReadConn[data.Number] == nil {
-						// 为什么注释的这一段代码是会锁死？？？
-						//*(ctx.Expand.(Context).ReadConn[data.Number]) = func() {
-						//	ctx.Log.Printf("编号：%d启动读。。。\n", data.Number)
-						//	defer ctx.Log.Printf("编号：%d结束读。。。\n", data.Number)
-						//	for {
-						//		if ctx.Expand.(Context).ReadConn[data.Number] == nil {
-						//			return
-						//		}
-						//		buf := make([]byte, 10240)
-						//		n, err := (*ctx.Expand.(Context).Conn[id]).Read(buf)
-						//		if err != nil {
-						//			ctx.Log.Errorln(err)
-						//			break
-						//		}
-						//		ctx.Expand.(Context).ToSafrpServer[id] <- common.DataPackage{
-						//			Number: data.Number,
-						//			Status: "open",
-						//			Data:   buf[:n],
-						//		}
-						//	}
-						//}
 						f1 := func() {
 							ctx.Log.Printf("编号：%d启动读。。。\n", data.Number)
 							defer ctx.Log.Printf("编号：%d结束读。。。\n", data.Number)
+							buf := BufPool.Get().([]byte)
+							defer BufPool.Put(buf)
 							for {
 								if ctx.Expand.(Context).ReadConn[data.Number] == nil {
 									return
 								}
-								buf := make([]byte, 10240)
+								if ctx.Expand.(Context).Conn[id] == nil {
+									ctx.Log.Println(ctx.Expand.(Context).Conn[id])
+									return
+								}
 								n, err := (*ctx.Expand.(Context).Conn[id]).Read(buf)
 								if err != nil {
 									ctx.Log.Errorln(err)
