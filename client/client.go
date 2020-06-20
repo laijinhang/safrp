@@ -54,32 +54,29 @@ func loadConfig() {
 	if err != nil {
 		log.Fatal("Fail to read file: ", err)
 	}
-	temp, _ := cfg.Section("server").GetKey("ip")
-	conf.ServerIP = temp.String()
-	temp, _ = cfg.Section("server").GetKey("port")
-	conf.ServerPort = temp.String()
-	temp, _ = cfg.Section("server").GetKey("password")
-	conf.Password = temp.String()
-	temp, _ = cfg.Section("proxy").GetKey("ip")
-	conf.HTTPIP = temp.String()
-	temp, _ = cfg.Section("proxy").GetKey("port")
-	conf.HTTPPort = temp.String()
-	temp, _ = cfg.Section("proxy").GetKey("protocol")
-	conf.Protocol = temp.String()
-	temp, _ = cfg.Section("proxy").GetKey("conn_num")
+	serverIni := cfg.Section("server")
+	conf.ServerIP = serverIni.Key("ip").String()
+	conf.ServerPort = serverIni.Key("port").String()
+	conf.Password = serverIni.Key("password").String()
+	conf.ServerPort = serverIni.Key("port").String()
+
+	proxyIni := cfg.Section("proxy")
+	conf.HTTPIP = proxyIni.Key("ip").String()
+	conf.HTTPPort = proxyIni.Key("port").String()
+	conf.Protocol = proxyIni.Key("protocol").String()
+
 	conf.ConnNum = func(v int, e error) int {
 		if e != nil {
 			panic(e)
 		}
 		return v
-	}(temp.Int())
-	temp, _ = cfg.Section("").GetKey("pipe_num")
+	}(cfg.Section("proxy").Key("conn_num").Int())
 	conf.PipeNum = func(v int, e error) int {
 		if e != nil {
 			panic(e)
 		}
 		return v
-	}(temp.Int())
+	}(cfg.Section("").Key("pipe_num").Int())
 
 	logrus.SetLevel(logrus.TraceLevel)
 	logrus.SetFormatter(&logrus.TextFormatter{
