@@ -16,6 +16,7 @@ import (
 type Config struct {
 	ServerIP   string
 	ServerPort string
+	ConnNum int
 	Password   string
 	HTTPIP     string
 	HTTPPort   string
@@ -53,7 +54,6 @@ func loadConfig() {
 	if err != nil {
 		log.Fatal("Fail to read file: ", err)
 	}
-
 	temp, _ := cfg.Section("server").GetKey("ip")
 	conf.ServerIP = temp.String()
 	temp, _ = cfg.Section("server").GetKey("port")
@@ -66,6 +66,13 @@ func loadConfig() {
 	conf.HTTPPort = temp.String()
 	temp, _ = cfg.Section("proxy").GetKey("protocol")
 	conf.Protocol = temp.String()
+	temp, _ = cfg.Section("proxy").GetKey("conn_num")
+	conf.ConnNum = func(v int, e error) int {
+		if e != nil {
+			panic(e)
+		}
+		return v
+	}(temp.Int())
 	temp, _ = cfg.Section("").GetKey("pipe_num")
 	conf.PipeNum = func(v int, e error) int {
 		if e != nil {
@@ -87,6 +94,7 @@ func loadConfig() {
 	logrus.Infoln("server-ip:", conf.ServerIP)
 	logrus.Infoln("server-port:", conf.ServerPort)
 	logrus.Infoln("server-password:", conf.Password)
+	logrus.Infoln("conn_num:", conf.ConnNum)
 	logrus.Infoln("http-ip:", conf.HTTPIP)
 	logrus.Infoln("http-port:", conf.HTTPPort)
 	logrus.Infoln()

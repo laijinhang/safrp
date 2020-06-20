@@ -13,12 +13,13 @@ import (
 )
 
 type Config struct {
-	IP           string
-	ExtranetPort string
-	ServerPort   string
-	Protocol     string
-	Password     string
-	PipeNum      int
+	IP              string
+	ExtranetPort    string
+	ExtranetConnNum int
+	ServerPort      string
+	Protocol        string
+	Password        string
+	PipeNum         int
 }
 
 type Context struct {
@@ -27,7 +28,7 @@ type Context struct {
 	ConnNumberPool     *common.NumberPool // 连接编号池
 	ConnDataChan       []chan common.DataPackage
 	SafrpSendChan      []chan common.DataPackage // 连接
-	SafrpReadChan	   []chan common.DataPackage // 连接
+	SafrpReadChan      []chan common.DataPackage // 连接
 	PipeConnControllor chan int                  // 限制safrp客户端与safrp服务端之间的连接数
 }
 
@@ -55,9 +56,15 @@ func loadConfig() {
 		confs = append(confs, Config{
 			IP:           pipeConf.Key("ip").String(),
 			ExtranetPort: pipeConf.Key("extranet_port").String(),
-			ServerPort:   pipeConf.Key("server_port").String(),
-			Protocol:     pipeConf.Key("protocol").String(),
-			Password:     pipeConf.Key("password").String(),
+			ExtranetConnNum: func(v int, e error) int {
+				if e != nil {
+					panic(e)
+				}
+				return v
+			}(pipeConf.Key("extranet_conn_num").Int()),
+			ServerPort: pipeConf.Key("server_port").String(),
+			Protocol:   pipeConf.Key("protocol").String(),
+			Password:   pipeConf.Key("password").String(),
 			PipeNum: func(v int, e error) int {
 				if e != nil {
 					panic(e)
@@ -88,7 +95,7 @@ func main() {
 				ctx := common.Context{
 					Conf:       confs[i],
 					UnitId:     i + 1,
-					NumberPool: common.NewNumberPool(3000, 1),
+					NumberPool: common.NewNumberPool(uint64(confs[i].ExtranetConnNum), 1),
 					SendData:   make(chan common.DataPackage, 1000),
 					ReadDate:   make(chan common.DataPackage, 1000),
 					Log:        log,
@@ -99,14 +106,11 @@ func main() {
 
 				sendChan := make([]chan common.DataPackage, ctx.Conf.(Config).PipeNum)
 				readChan := make([]chan common.DataPackage, ctx.Conf.(Config).PipeNum)
-				for i := 0;i < ctx.Conf.(Config).PipeNum;i++ {
+				for i := 0; i < ctx.Conf.(Config).PipeNum; i++ {
 					sendChan[i] = make(chan common.DataPackage)
 					readChan[i] = make(chan common.DataPackage)
 				}
-				connChan := make([]chan common.DataPackage, 3001)
-				//for i := 0;i < 3001;i++ {
-				//	connChan[i] = make(chan common.DataPackage, 10)
-				//}
+				connChan := make([]chan common.DataPackage, confs[i].ExtranetConnNum)
 
 				ctx1.Expand = Context{
 					ConnManage:         make([]net.Conn, ctx.Conf.(Config).PipeNum+1),
@@ -118,7 +122,7 @@ func main() {
 				ctx2.Expand = Context{
 					ConnManage:         make([]net.Conn, ctx.Conf.(Config).PipeNum+1),
 					ConnClose:          make([]chan bool, ctx.Conf.(Config).PipeNum+1),
-					SafrpSendChan:		sendChan,
+					SafrpSendChan:      sendChan,
 					SafrpReadChan:      readChan,
 					PipeConnControllor: make(chan int, ctx.Conf.(Config).PipeNum),
 					ConnNumberPool:     common.NewNumberPool(uint64(ctx.Conf.(Config).PipeNum), uint64(1)),
@@ -137,7 +141,7 @@ func main() {
 				func() {
 					ctxExit, chanExit := context.WithCancel(context.Background())
 					defer func() {
-						chanExit()	// 通知该服务下的所有协程退出
+						chanExit() // 通知该服务下的所有协程退出
 					}()
 					ctx2.Ctx = ctxExit
 					// 对safrp客户端
@@ -180,7 +184,7 @@ func ExtranetTCPServer(ctx *common.Context) {
 		}
 		go func(client net.Conn) {
 			defer func() {
-				for p := recover();p != nil;p = recover() {
+				for p := recover(); p != nil; p = recover() {
 					ctx.Log.Println(p)
 				}
 			}()
@@ -203,9 +207,9 @@ func ExtranetTCPServer(ctx *common.Context) {
 				// 通知safrp客户端，该临时编号已被回收
 				ctx.Log.Infoln("编号：", num, "连接关闭")
 
-				ctx.Expand.(Context).SafrpSendChan[num % ctx.Conf.(Config).PipeNum] <- common.DataPackage{
+				ctx.Expand.(Context).SafrpSendChan[num%ctx.Conf.(Config).PipeNum] <- common.DataPackage{
 					Number: num,
-					Data:   []byte(fmt.Sprintf("%d %s close\r\n%s", num, client.RemoteAddr() , DataEnd))}
+					Data:   []byte(fmt.Sprintf("%d %s close\r\n%s", num, client.RemoteAddr(), DataEnd))}
 				ctx.NumberPool.Put(number)
 				close(ctx.Expand.(Context).ConnDataChan[num])
 				ctx.Expand.(Context).ConnDataChan[num] = nil
@@ -241,14 +245,14 @@ func ExtranetTCPServer(ctx *common.Context) {
 							if err == io.EOF {
 								return
 							}
-							if neterr, ok := err.(net.Error);(ok && neterr.Timeout()) || err == io.EOF {
+							if neterr, ok := err.(net.Error); (ok && neterr.Timeout()) || err == io.EOF {
 								continue
 							}
 							ctx.Log.Errorln(err)
 							return
 						}
 						// 向管道分发请求
-						ctx.Expand.(Context).SafrpSendChan[num % ctx.Conf.(Config).PipeNum] <- common.DataPackage{
+						ctx.Expand.(Context).SafrpSendChan[num%ctx.Conf.(Config).PipeNum] <- common.DataPackage{
 							Number: num,
 							Data:   []byte(fmt.Sprintf("%d %s open\r\n%s%s", num, client.RemoteAddr(), string(buf[:n]), DataEnd))}
 					}
@@ -282,7 +286,7 @@ func ExtranetTCPServer(ctx *common.Context) {
 							if err == io.EOF {
 								return
 							}
-							if neterr, ok := err.(net.Error);(ok && neterr.Timeout()) || err == io.EOF {
+							if neterr, ok := err.(net.Error); (ok && neterr.Timeout()) || err == io.EOF {
 								continue
 							}
 							ctx.Log.Errorln(err)
@@ -308,15 +312,15 @@ func SafrpTCPServer(ctx *common.Context) {
 			continue
 		}
 		select {
-		case ctx.Expand.(Context).PipeConnControllor <- 1:	// 控制safrp客户端与safrp服务端最大连接数
+		case ctx.Expand.(Context).PipeConnControllor <- 1: // 控制safrp客户端与safrp服务端最大连接数
 			id, _ := ctx.Expand.(Context).ConnNumberPool.Get()
 			ctx.Log.Infoln(fmt.Sprintf("管道：%d 连接。。。", id))
 			ctx.Expand.(Context).ConnManage[id] = client
 			go func(id int) {
 				defer func() {
 					//ctx.Expand.(Context).ConnManage[id].Close()	// 关闭对应连接
-					ctx.Expand.(Context).ConnManage[id % ctx.Conf.(Config).PipeNum] = nil   // 对应连接器清空
-					ctx.Expand.(Context).ConnNumberPool.Put(id) // 编号放回到编号池
+					ctx.Expand.(Context).ConnManage[id%ctx.Conf.(Config).PipeNum] = nil // 对应连接器清空
+					ctx.Expand.(Context).ConnNumberPool.Put(id)                         // 编号放回到编号池
 					<-ctx.Expand.(Context).PipeConnControllor
 				}()
 				defer func() {
@@ -336,9 +340,9 @@ func SafrpTCPServer(ctx *common.Context) {
 
 				ExitChan := make(chan bool)
 				FromStream := make(chan []byte, 100)
-				ToStream := ctx.Expand.(Context).SafrpReadChan[id % ctx.Conf.(Config).PipeNum]
+				ToStream := ctx.Expand.(Context).SafrpReadChan[id%ctx.Conf.(Config).PipeNum]
 				go func(num int) {
-					for  {
+					for {
 						select {
 						case data := <-ToStream:
 							if ctx.Expand.(Context).ConnDataChan[data.Number] != nil {
@@ -363,7 +367,7 @@ func SafrpTCPServer(ctx *common.Context) {
 					defer c.Close()
 
 					var err error
-					buf := make([]byte, 1 << 23 )
+					buf := make([]byte, 1<<23)
 					for {
 						err = c.SetReadDeadline(time.Now().Add(60 * time.Second))
 						if err != nil {
@@ -373,7 +377,7 @@ func SafrpTCPServer(ctx *common.Context) {
 						}
 						n, err := c.Read(buf)
 						if err != nil {
-							if neterr, ok := err.(net.Error);(ok && neterr.Timeout()) || err == io.EOF {
+							if neterr, ok := err.(net.Error); (ok && neterr.Timeout()) || err == io.EOF {
 								continue
 							}
 							ctx.Log.Errorln(err)
@@ -385,9 +389,9 @@ func SafrpTCPServer(ctx *common.Context) {
 				// 向safrp客户端写数据
 				for {
 					select {
-					case <-ctx.Expand.(Context).ConnClose[id % ctx.Conf.(Config).PipeNum]:
+					case <-ctx.Expand.(Context).ConnClose[id%ctx.Conf.(Config).PipeNum]:
 						return
-					case data := <-ctx.Expand.(Context).SafrpSendChan[id % ctx.Conf.(Config).PipeNum]:
+					case data := <-ctx.Expand.(Context).SafrpSendChan[id%ctx.Conf.(Config).PipeNum]:
 						//_, err = c.Write([]byte(fmt.Sprintf("%d %s\n%s%s", data.Number, "ip", string(data.Data), DataEnd)))
 						_, err = c.Write(data.Data)
 						if err != nil {
