@@ -23,6 +23,7 @@ type Config struct {
 }
 
 type Context struct {
+	PipeName           logrus.Fields     // pipe名
 	ConnManage         []net.Conn // 管理与safrp之间的连接
 	ConnClose          []chan bool
 	ConnNumberPool     *common.NumberPool // 连接编号池
@@ -89,7 +90,6 @@ func main() {
 					TimestampFormat:        "2006-01-02 15:04:05",
 					DisableLevelTruncation: true,
 				})
-				//log.SetReportCaller(true)
 				log.Printf("启动pipe%d\n", i+1)
 
 				ctx := common.Context{
@@ -113,6 +113,9 @@ func main() {
 				connChan := make([]chan common.DataPackage, confs[i].ExtranetConnNum)
 
 				ctx1.Expand = Context{
+					PipeName:           logrus.Fields{
+						"pipe": fmt.Sprint(i+1),
+					},
 					ConnManage:         make([]net.Conn, ctx.Conf.(Config).PipeNum+1),
 					PipeConnControllor: make(chan int, ctx.Conf.(Config).PipeNum),
 					SafrpSendChan:      sendChan,
@@ -120,6 +123,9 @@ func main() {
 					ConnNumberPool:     common.NewNumberPool(uint64(ctx.Conf.(Config).PipeNum), uint64(1)),
 					ConnDataChan:       connChan}
 				ctx2.Expand = Context{
+					PipeName:           logrus.Fields{
+						"pipe": fmt.Sprint(i+1),
+					},
 					ConnManage:         make([]net.Conn, ctx.Conf.(Config).PipeNum+1),
 					ConnClose:          make([]chan bool, ctx.Conf.(Config).PipeNum+1),
 					SafrpSendChan:      sendChan,
@@ -185,7 +191,7 @@ func ExtranetTCPServer(ctx *common.Context) {
 		go func(client net.Conn) {
 			defer func() {
 				for p := recover(); p != nil; p = recover() {
-					ctx.Log.Println(p)
+					ctx.Log.WithFields(ctx.Expand.(Context).PipeName).Println(p)
 				}
 			}()
 			defer client.Close()
@@ -205,7 +211,7 @@ func ExtranetTCPServer(ctx *common.Context) {
 			}
 			defer func(number int) {
 				// 通知safrp客户端，该临时编号已被回收
-				ctx.Log.Infoln("编号：", num, "连接关闭")
+				ctx.Log.WithFields(ctx.Expand.(Context).PipeName).Infoln("编号：", num, "连接关闭")
 
 				ctx.Expand.(Context).SafrpSendChan[num%ctx.Conf.(Config).PipeNum] <- common.DataPackage{
 					Number: num,
@@ -214,7 +220,7 @@ func ExtranetTCPServer(ctx *common.Context) {
 				close(ctx.Expand.(Context).ConnDataChan[num])
 				ctx.Expand.(Context).ConnDataChan[num] = nil
 			}(num)
-			ctx.Log.Println("编号：", num)
+			ctx.Log.WithFields(ctx.Expand.(Context).PipeName).Println("编号：", num)
 
 			ctx.Expand.(Context).ConnDataChan[num] = make(chan common.DataPackage, 10)
 			connCloseRead, cancelRead := context.WithCancel(context.Background())
@@ -248,7 +254,7 @@ func ExtranetTCPServer(ctx *common.Context) {
 							if neterr, ok := err.(net.Error); (ok && neterr.Timeout()) || err == io.EOF {
 								continue
 							}
-							ctx.Log.Errorln(err)
+							ctx.Log.WithFields(ctx.Expand.(Context).PipeName).Errorln(err)
 							return
 						}
 						// 向管道分发请求
@@ -278,7 +284,7 @@ func ExtranetTCPServer(ctx *common.Context) {
 						// 有数据来的话，就一直写，直到连接关闭
 						err := client.SetWriteDeadline(time.Now().Add(time.Second))
 						if err != nil {
-							ctx.Log.Errorln(err)
+							ctx.Log.WithFields(ctx.Expand.(Context).PipeName).Errorln(err)
 							return
 						}
 						n, err := client.Write(data.Data)
@@ -289,11 +295,11 @@ func ExtranetTCPServer(ctx *common.Context) {
 							if neterr, ok := err.(net.Error); (ok && neterr.Timeout()) || err == io.EOF {
 								continue
 							}
-							ctx.Log.Errorln(err)
+							ctx.Log.WithFields(ctx.Expand.(Context).PipeName).Errorln(err)
 							return
 						}
 						if n != len(data.Data) {
-							ctx.Log.Println("n, len(data.Data): ", n, len(data.Data))
+							ctx.Log.WithFields(ctx.Expand.(Context).PipeName).Println("n, len(data.Data): ", n, len(data.Data))
 						}
 					}
 				}
@@ -308,13 +314,13 @@ func SafrpTCPServer(ctx *common.Context) {
 	for {
 		client, err := ctx.Conn.(net.Listener).Accept()
 		if err != nil {
-			ctx.Log.Errorln(err)
+			ctx.Log.WithFields(ctx.Expand.(Context).PipeName).Errorln(err)
 			continue
 		}
 		select {
 		case ctx.Expand.(Context).PipeConnControllor <- 1: // 控制safrp客户端与safrp服务端最大连接数
 			id, _ := ctx.Expand.(Context).ConnNumberPool.Get()
-			ctx.Log.Infoln(fmt.Sprintf("管道：%d 连接。。。", id))
+			ctx.Log.WithFields(ctx.Expand.(Context).PipeName).Infoln(fmt.Sprintf("管道：%d 连接。。。", id))
 			ctx.Expand.(Context).ConnManage[id] = client
 			go func(id int) {
 				defer func() {
@@ -329,14 +335,14 @@ func SafrpTCPServer(ctx *common.Context) {
 					//}
 				}()
 				c := ctx.Expand.(Context).ConnManage[id]
-				ctx.Log.Infoln(fmt.Sprintf("管道：%d 验证密码。。。", id))
+				ctx.Log.WithFields(ctx.Expand.(Context).PipeName).Infoln(fmt.Sprintf("管道：%d 验证密码。。。", id))
 				if !checkConnectPassword(c, ctx) { // 如果配置密码不匹配，结束连接
 					c.Write([]byte{'0'})
-					ctx.Log.Errorln("连接密码错误。。。")
+					ctx.Log.WithFields(ctx.Expand.(Context).PipeName).Errorln("连接密码错误。。。")
 					return
 				}
 				c.Write([]byte{'1'})
-				ctx.Log.Infoln(fmt.Sprintf("管道：%d 建立成功。。。", id))
+				ctx.Log.WithFields(ctx.Expand.(Context).PipeName).Infoln(fmt.Sprintf("管道：%d 建立成功。。。", id))
 
 				ExitChan := make(chan bool)
 				FromStream := make(chan []byte, 100)
@@ -372,7 +378,7 @@ func SafrpTCPServer(ctx *common.Context) {
 						err = c.SetReadDeadline(time.Now().Add(60 * time.Second))
 						if err != nil {
 							ctx.Expand.(Context).ConnClose[id] <- true
-							ctx.Log.Errorln(err)
+							ctx.Log.WithFields(ctx.Expand.(Context).PipeName).Errorln(err)
 							return
 						}
 						n, err := c.Read(buf)
@@ -380,7 +386,7 @@ func SafrpTCPServer(ctx *common.Context) {
 							if neterr, ok := err.(net.Error); (ok && neterr.Timeout()) || err == io.EOF {
 								continue
 							}
-							ctx.Log.Errorln(err)
+							ctx.Log.WithFields(ctx.Expand.(Context).PipeName).Errorln(err)
 							return
 						}
 						FromStream <- buf[:n] // 发往数据处理中心
@@ -395,7 +401,7 @@ func SafrpTCPServer(ctx *common.Context) {
 						//_, err = c.Write([]byte(fmt.Sprintf("%d %s\n%s%s", data.Number, "ip", string(data.Data), DataEnd)))
 						_, err = c.Write(data.Data)
 						if err != nil {
-							ctx.Log.Errorln(err)
+							ctx.Log.WithFields(ctx.Expand.(Context).PipeName).Errorln(err)
 							if neterr, ok := err.(net.Error); (ok && neterr.Timeout()) || err == io.EOF {
 								continue
 							}
@@ -426,7 +432,7 @@ func SendHeartbeat(ctx *common.Context) {
 	n, err := ctx.Conn.(net.Conn).Write(TCPDataEnd)
 	if n != len(TCPDataEnd) || err != nil {
 		// 如果是断开了
-		ctx.Log.Errorln(err)
+		ctx.Log.WithFields(ctx.Expand.(Context).PipeName).Errorln(err)
 	}
 }
 
