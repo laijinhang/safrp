@@ -35,7 +35,6 @@ func NewNumberPool(maxVal, add uint64) *NumberPool {
 					num++
 				}
 			}
-			fmt.Println("当前可用：", num)
 		}
 	}()
 	return p
