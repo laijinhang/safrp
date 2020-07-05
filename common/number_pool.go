@@ -1,7 +1,6 @@
 package common
 
 import (
-	"fmt"
 	"sync/atomic"
 	"time"
 )
@@ -9,6 +8,7 @@ import (
 type NumberPool struct {
 	numberArr []uint64
 	number uint64
+	currentNum uint64
 	maxVal uint64
 	add uint64
 }
@@ -35,7 +35,6 @@ func NewNumberPool(maxVal, add uint64) *NumberPool {
 					num++
 				}
 			}
-			fmt.Println("当前可用：", num)
 		}
 	}()
 	return p
@@ -48,11 +47,19 @@ func NewNumberPool(maxVal, add uint64) *NumberPool {
  * func (n *NumberPool)Get() (uint64, bool);
  */
 func (n *NumberPool)Get() (uint64, bool) {
+	if atomic.LoadUint64(&n.currentNum) > n.maxVal {
+		return 0, false
+	}
+	if atomic.AddUint64(&n.currentNum, 1) > n.maxVal {
+		atomic.AddUint64(&n.currentNum, -1)
+		return 0, false
+	}
 	num := 0
 	for i := atomic.LoadUint64(&n.number);;i = atomic.AddUint64(&n.number, n.add) {
 		atomic.CompareAndSwapUint64(&n.number, n.maxVal, 1)
 		num++
 		if num / int(n.maxVal) >= 3 {
+			atomic.AddUint64(&n.currentNum, -1)
 			return 0, false
 		}
 		if i > n.maxVal {
@@ -62,6 +69,8 @@ func (n *NumberPool)Get() (uint64, bool) {
 			return i, true
 		}
 	}
+
+	atomic.AddUint64(&n.currentNum, -1)
 	return 0, false
 }
 
@@ -72,5 +81,6 @@ func (n *NumberPool)Get() (uint64, bool) {
  * func (n *NumberPool)Put(number int);
  */
 func (n *NumberPool)Put(number int) {
+	atomic.AddUint64(&n.currentNum, -1)
 	atomic.CompareAndSwapUint64(&n.numberArr[number], 1, 0)
 }
