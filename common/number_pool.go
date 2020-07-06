@@ -8,7 +8,7 @@ import (
 type NumberPool struct {
 	numberArr []uint64
 	number uint64
-	currentNum uint64
+	currentNum int64
 	maxVal uint64
 	add uint64
 }
@@ -47,11 +47,11 @@ func NewNumberPool(maxVal, add uint64) *NumberPool {
  * func (n *NumberPool)Get() (uint64, bool);
  */
 func (n *NumberPool)Get() (uint64, bool) {
-	if atomic.LoadUint64(&n.currentNum) > n.maxVal {
+	if uint64(atomic.LoadInt64(&n.currentNum)) > n.maxVal {
 		return 0, false
 	}
-	if atomic.AddUint64(&n.currentNum, 1) > n.maxVal {
-		atomic.AddUint64(&n.currentNum, -1)
+	if uint64(atomic.AddInt64(&n.currentNum, 1)) > n.maxVal {
+		atomic.AddInt64(&n.currentNum, -1)
 		return 0, false
 	}
 	num := 0
@@ -59,7 +59,7 @@ func (n *NumberPool)Get() (uint64, bool) {
 		atomic.CompareAndSwapUint64(&n.number, n.maxVal, 1)
 		num++
 		if num / int(n.maxVal) >= 3 {
-			atomic.AddUint64(&n.currentNum, -1)
+			atomic.AddInt64(&n.currentNum, -1)
 			return 0, false
 		}
 		if i > n.maxVal {
@@ -70,7 +70,7 @@ func (n *NumberPool)Get() (uint64, bool) {
 		}
 	}
 
-	atomic.AddUint64(&n.currentNum, -1)
+	atomic.AddInt64(&n.currentNum, -1)
 	return 0, false
 }
 
@@ -81,6 +81,6 @@ func (n *NumberPool)Get() (uint64, bool) {
  * func (n *NumberPool)Put(number int);
  */
 func (n *NumberPool)Put(number int) {
-	atomic.AddUint64(&n.currentNum, -1)
+	atomic.AddInt64(&n.currentNum, -1)
 	atomic.CompareAndSwapUint64(&n.numberArr[number], 1, 0)
 }
