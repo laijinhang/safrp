@@ -46,6 +46,12 @@ const (
 
 var TCPDataEnd = []byte{'<', 'e', '>'}
 
+/**
+ * 加载safrp服务端配置文件
+ * @param		nil
+ * @return		nil
+ * func loadConfig();
+ */
 func loadConfig() {
 	cfg, err := ini.Load("./safrp.ini")
 	if err != nil {
@@ -179,9 +185,13 @@ func SafrpServer(ctx *common.Context) {
 var extranetServer = common.NewSingle()
 var safrpServer = common.NewSingle()
 
-/*--------- 核心插件 -----------*/
-
-// safrp TCP对外服务插件
+/*-------------- 核心插件 -----------------*/
+/**
+ * safrp TCP对外服务插件
+ * @param		nil
+ * @return		nil
+ * func loadConfig();
+ */
 func ExtranetTCPServer(ctx *common.Context) {
 	for {
 		client, err := ctx.Conn.(net.Listener).Accept()
@@ -309,7 +319,12 @@ func ExtranetTCPServer(ctx *common.Context) {
 	}
 }
 
-// safrp TCP服务端插件
+/**
+ * safrp TCP服务端插件
+ * @param		nil
+ * @return		nil
+ * func loadConfig();
+ */
 func SafrpTCPServer(ctx *common.Context) {
 	for {
 		client, err := ctx.Conn.(net.Listener).Accept()
@@ -417,7 +432,12 @@ func SafrpTCPServer(ctx *common.Context) {
 	}
 }
 
-// 连接安全验证插件
+/**
+ * 连接安全验证插件
+ * @param		nil
+ * @return		nil
+ * func loadConfig();
+ */
 func checkConnectPassword(c net.Conn, ctx *common.Context) bool {
 	buf := make([]byte, 1024)
 	n, _ := c.Read(buf)
@@ -427,28 +447,6 @@ func checkConnectPassword(c net.Conn, ctx *common.Context) bool {
 	return false
 }
 
-// 发送心跳包插件
-func SendHeartbeat(ctx *common.Context) {
-	n, err := ctx.Conn.(net.Conn).Write(TCPDataEnd)
-	if n != len(TCPDataEnd) || err != nil {
-		// 如果是断开了
-		ctx.Log.WithFields(ctx.Expand.(Context).PipeName).Errorln(err)
-	}
-}
-
-// 判断心跳包插件
-func ReadHeartbeat() {
-
-}
-
-// 与safrp客户端交互的数据解析插件
-func parsePackage(c net.Conn) {
-	go func() {
-		common.Run(func() {
-
-		})
-	}()
-}
 
 /*-------------- 功能性插件 -----------------*/
 // 限流插件
