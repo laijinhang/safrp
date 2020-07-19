@@ -181,6 +181,11 @@ func SafrpServer(ctx *common.Context) {
 	})
 }
 
+func ExtranetUDPServer(ctx *common.Context) {
+
+}
+func SafrpUDPServer(ctx *common.Context) {}
+
 // 单例模式
 var extranetServer = common.NewSingle()
 var safrpServer = common.NewSingle()
