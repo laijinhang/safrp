@@ -190,6 +190,39 @@ func SafrpUDPServer(ctx *common.Context) {}
 var extranetServer = common.NewSingle()
 var safrpServer = common.NewSingle()
 
+/**
+ * 加载服务（工厂模式）
+ * @param		server string, typ int
+ * @return		func(ctx *common.Context)
+ * func ServerFactory(server string, typ int) *func(ctx *common.Context);
+ */
+func ServerFactory(server string, typ int) *func(ctx *common.Context) {
+	legality := typ == 1 || typ == 2
+	if !legality {
+		return nil
+	}
+	var serFunc func(ctx *common.Context)
+	if typ == 1 {
+		switch server {
+		case "udp":
+			serFunc = ExtranetUDPServer
+		case "tcp":
+			serFunc = ExtranetTCPServer
+		case "http":
+			serFunc = ExtranetTCPServer
+		}
+	} else {
+		switch server {
+		case "udp":
+			serFunc = SafrpUDPServer
+		case "tcp":
+			serFunc = SafrpTCPServer
+		case "http":
+			serFunc = SafrpTCPServer
+		}
+	}
+	return &serFunc
+}
 /*-------------- 核心插件 -----------------*/
 /**
  * safrp TCP对外服务插件
@@ -451,7 +484,6 @@ func checkConnectPassword(c net.Conn, ctx *common.Context) bool {
 	}
 	return false
 }
-
 
 /*-------------- 功能性插件 -----------------*/
 // 限流插件
