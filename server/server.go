@@ -238,7 +238,7 @@ func ExtranetTCPServer(ctx *common.Context) {
 		}
 		go func(client net.Conn) {
 			defer func() {
-				for p := recover(); p != nil; p = recover() {
+				if p := recover(); p != nil; p = recover() {
 					ctx.Log.WithFields(ctx.Expand.(Context).PipeName).Println(p)
 				}
 			}()
