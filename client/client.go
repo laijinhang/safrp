@@ -110,7 +110,7 @@ func main() {
 			TimestampFormat:        "2006-01-02 15:04:05",
 			DisableLevelTruncation: true,
 		})
-		//log.SetReportCaller(true)
+		log.SetReportCaller(true)
 
 		ctx := common.Context{
 			Conf:       conf,
@@ -292,6 +292,7 @@ func ProxyClient(ctx *common.Context) {
 						ctx.Expand.(Context).Conn[id] = nil
 						continue
 					}
+					fmt.Println(string(data.Data))
 					if ctx.Expand.(Context).Conn[id] == nil {
 						conn, err := net.Dial("tcp", ctx.Conf.(Config).HTTPIP+":"+ctx.Conf.(Config).HTTPPort)
 						if err != nil {
@@ -345,6 +346,13 @@ func ProxyClient(ctx *common.Context) {
 	}
 	wg.Wait()
 }
+
+/*
+对于一次完整的HTTP过程：
+1. 传输了一部分，TCP连接就断了 => HTTP结束
+2. 错误的HTTP数据请求 => 服务端会一直等待，直到这条TCP连接断开
+3. 完整的HTTP数据请求 => 请求成功
+ */
 
 // 通过密码登录插件
 func sendConnectPassword(ctx *common.Context) {
