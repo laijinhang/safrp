@@ -43,7 +43,7 @@ func Run(server func()) {
 		go func() {
 			defer resertWaitRun.Done()
 			defer func() {
-				if p := recover(); p != nil; p = recover() {
+				for p := recover(); p != nil; p = recover() {
 					logrus.Println("panic:", p)
 				}
 			}()

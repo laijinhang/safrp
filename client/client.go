@@ -173,6 +173,7 @@ func SafrpClient(ctx *common.Context) {
 				}
 				ctx.Conn.([]net.Conn)[id].Close() // 关闭连接
 				ctx.NumberPool.Put(int(id))
+				ctx.Log.Println(fmt.Sprintf("编号：%d，断开。。。\n", id))
 				<-connManage // 当前管道减一
 			}()
 			ctx.Conn.([]net.Conn)[id].Write([]byte(ctx.Conf.(Config).Password)) // 发送密码
@@ -353,3 +354,5 @@ func sendConnectPassword(ctx *common.Context) {
 		ctx.Conn.([]net.Conn)[i].Read([]byte(ctx.Conf.(Config).Password)) // 发送连接密码
 	}
 }
+
+
