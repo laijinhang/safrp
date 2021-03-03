@@ -6,24 +6,23 @@ import (
 	"safrp/client/config"
 	"safrp/client/context"
 	"safrp/client/log"
-	"safrp/common"
 	"time"
 )
 
 func NewSafrpClient(conf *config.Config, ctx *context.Context) *safrpClient {
 	return &safrpClient{
 		connManage: make(chan int, conf.PipeNum),
-		config:conf,
+		config:     conf,
 		log:        log.GetLog(),
-		ctx:ctx,
+		ctx:        ctx,
 	}
 }
 
 type safrpClient struct {
-	connManage chan int		// 连接数控制器
-	config *config.Config	// 配置
-	log *logrus.Logger		// 日志
-	ctx *context.Context		// 上下文
+	connManage chan int         // 连接数控制器
+	config     *config.Config   // 配置
+	log        *logrus.Logger   // 日志
+	ctx        *context.Context // 上下文
 }
 
 func (this *safrpClient) Run() {
@@ -45,7 +44,7 @@ func (this *safrpClient) Run() {
 
 func (this *safrpClient) runPipe(id uint64) {
 	defer func() {
-		for r := recover();r != nil;r = recover() {
+		for r := recover(); r != nil; r = recover() {
 			this.log.Println(r)
 		}
 		// 回收连接编号
@@ -54,23 +53,11 @@ func (this *safrpClient) runPipe(id uint64) {
 	// 请求连接safrp服务端
 	this.connectSafrpServer(id)
 
-	connClose := make(chan bool)
-	FromStream := make(chan []byte, 10)
-	// 数据转发中心
-	go common.DataProcessingCenter(FromStream,
-		this.ctx.ToProxyServer,
-		[]byte("<<end>>"),
-		connClose)
-
-	go func() {
-		//for {
-		//	select {
-		//	case pack := <-ctx.Expand.(Context).ToProxyServer:
-		//		//ctx.Log.Infoln(fmt.Sprintf("编号：%d, Data：%s\n", pack.Number, string(pack.Data)))
-		//		ctx.Expand.(Context).ToClient[pack.Number%ctx.Conf.(Config).PipeNum] <- pack
-		//	}
-		//}
-	}()
+	go this.PublishSafrpServerEvent(id)
+	go this.SubscribeSafrpServerEvent(id)
+	go this.PublishProxyEvent(id)
+	go this.SubscribeProxyEvent(id)
+	select {}
 }
 
 func (this *safrpClient) getProtocol() string {
@@ -92,7 +79,7 @@ func (this *safrpClient) connectSafrpServer(id uint64) {
 }
 
 func (this *safrpClient) getPipe() {
-	this.connManage <- 1	// 没有达到最大隧道数
+	this.connManage <- 1 // 没有达到最大隧道数
 }
 
 func (this *safrpClient) putPipe() {
@@ -105,4 +92,24 @@ func (this *safrpClient) setCtxConn(conn net.Conn, id uint64) {
 
 func (this *safrpClient) getCtxConn(id uint64) net.Conn {
 	return this.ctx.Conn[id]
+}
+
+// 发布 向safrp服务端写数据 事件
+func (this *safrpClient) PublishSafrpServerEvent(id uint64) {
+
+}
+
+// 订阅 从safrp服务端读数据 事件
+func (this *safrpClient) SubscribeSafrpServerEvent(id uint64) {
+
+}
+
+// 发布 向代理写数据 事件
+func (this *safrpClient) PublishProxyEvent(id uint64) {
+
+}
+
+// 订阅 从代理读数据 事件
+func (this *safrpClient) SubscribeProxyEvent(id uint64) {
+
 }
