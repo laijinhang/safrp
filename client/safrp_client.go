@@ -6,6 +6,7 @@ import (
 	"safrp/client/config"
 	"safrp/client/context"
 	"safrp/client/log"
+	"safrp/common"
 	"time"
 )
 
@@ -25,22 +26,6 @@ type safrpClient struct {
 	ctx *context.Context		// 上下文
 }
 
-func (this *safrpClient) getPipe() {
-	this.connManage <- 1	// 没有达到最大隧道数
-}
-
-func (this *safrpClient) putPipe() {
-	<-this.connManage
-}
-
-func (this *safrpClient) setCtxConn(conn *net.Conn, id uint64) {
-	this.ctx.Conn[id] = conn
-}
-
-func (this *safrpClient) getCtxConn(id uint64) *net.Conn {
-	return this.ctx.Conn[id]
-}
-
 func (this *safrpClient) Run() {
 	for {
 		this.getPipe()
@@ -53,13 +38,39 @@ func (this *safrpClient) Run() {
 		}
 		// 获取连接编号
 		id, _ := this.ctx.NumberPool.Get()
-		this.setCtxConn(&conn, id)
+		this.setCtxConn(conn, id)
 		go this.runPipe(id)
 	}
 }
 
 func (this *safrpClient) runPipe(id uint64) {
+	defer func() {
+		for r := recover();r != nil;r = recover() {
+			this.log.Println(r)
+		}
+		// 回收连接编号
+		this.putPipe()
+	}()
+	// 请求连接safrp服务端
+	this.connectSafrpServer(id)
 
+	connClose := make(chan bool)
+	FromStream := make(chan []byte, 10)
+	// 数据转发中心
+	go common.DataProcessingCenter(FromStream,
+		this.ctx.ToProxyServer,
+		[]byte("<<end>>"),
+		connClose)
+
+	go func() {
+		//for {
+		//	select {
+		//	case pack := <-ctx.Expand.(Context).ToProxyServer:
+		//		//ctx.Log.Infoln(fmt.Sprintf("编号：%d, Data：%s\n", pack.Number, string(pack.Data)))
+		//		ctx.Expand.(Context).ToClient[pack.Number%ctx.Conf.(Config).PipeNum] <- pack
+		//	}
+		//}
+	}()
 }
 
 func (this *safrpClient) getProtocol() string {
@@ -70,5 +81,28 @@ func (this *safrpClient) getSafrpServerAddress() string {
 	return this.config.SafrpServerIP + ":" + this.config.SafrpServerPort
 }
 
-func (this *safrpClient) connectSafrpServer() {
+func (this *safrpClient) connectSafrpServer(id uint64) {
+	this.ctx.Conn[id].Read([]byte(this.config.Password)) // 发送连接密码
+	buf := make([]byte, 1)
+	this.ctx.Conn[id].Read(buf) // 读取连接结果
+	if buf[0] == '0' {
+		panic("密码错误。。。")
+	}
+	this.log.Printf("编号：%d，连接成功。。。\n", id)
+}
+
+func (this *safrpClient) getPipe() {
+	this.connManage <- 1	// 没有达到最大隧道数
+}
+
+func (this *safrpClient) putPipe() {
+	<-this.connManage
+}
+
+func (this *safrpClient) setCtxConn(conn net.Conn, id uint64) {
+	this.ctx.Conn[id] = conn
+}
+
+func (this *safrpClient) getCtxConn(id uint64) net.Conn {
+	return this.ctx.Conn[id]
 }

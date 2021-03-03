@@ -16,6 +16,10 @@ type Config struct {
 	PipeNum    int
 }
 
+func (this *Config)GetPipeNum() int {
+	return this.PipeNum
+}
+
 func init() {
 	loadConfig()
 }
