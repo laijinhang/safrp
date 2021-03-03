@@ -93,23 +93,3 @@ func (this *safrpClient) setCtxConn(conn net.Conn, id uint64) {
 func (this *safrpClient) getCtxConn(id uint64) net.Conn {
 	return this.ctx.Conn[id]
 }
-
-// 发布 向safrp服务端写数据 事件
-func (this *safrpClient) PublishSafrpServerEvent(id uint64) {
-
-}
-
-// 订阅 从safrp服务端读数据 事件
-func (this *safrpClient) SubscribeSafrpServerEvent(id uint64) {
-
-}
-
-// 发布 向代理写数据 事件
-func (this *safrpClient) PublishProxyEvent(id uint64) {
-
-}
-
-// 订阅 从代理读数据 事件
-func (this *safrpClient) SubscribeProxyEvent(id uint64) {
-
-}
