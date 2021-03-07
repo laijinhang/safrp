@@ -1,4 +1,4 @@
-package main
+package proxy_client
 
 // 发布 代理 事件
 func (this *proxyClient) PublishProxyEvent(id uint64) {

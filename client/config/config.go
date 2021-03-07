@@ -37,7 +37,7 @@ var conf Config
  * func loadConfig();
  */
 func loadConfig() {
-	cfg, err := ini.Load("../safrp.ini")
+	cfg, err := ini.Load("./safrp.ini")
 	log := log.GetLog()
 	if err != nil {
 		log.Fatal("Fail to read file: ", err)

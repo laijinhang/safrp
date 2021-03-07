@@ -1,4 +1,4 @@
-package main
+package safrp_client
 
 import (
 	"github.com/sirupsen/logrus"
@@ -9,12 +9,12 @@ import (
 	"time"
 )
 
-func NewSafrpClient(conf *config.Config, ctx *context.Context) *safrpClient {
+func NewSafrpClient() *safrpClient {
 	return &safrpClient{
-		connManage: make(chan int, conf.PipeNum),
-		config:     conf,
+		connManage: make(chan int, config.GetConfig().PipeNum),
+		config:     config.GetConfig(),
 		log:        log.GetLog(),
-		ctx:        ctx,
+		ctx:        context.GetCtx(),
 	}
 }
 
