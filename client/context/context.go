@@ -4,10 +4,11 @@ import (
 	"net"
 	"safrp/client/config"
 	"safrp/common"
+	"safrp/common/number_pool"
 )
 
 type Context struct {
-	NumberPool      *common.NumberPool
+	NumberPool      *number_pool.NumberPool
 	FromSafrpServer []chan common.DataPackage
 	ToSafrpServer   []chan common.DataPackage
 	FromProxyServer chan common.DataPackage
@@ -22,7 +23,7 @@ var ctx Context
 
 func init() {
 	ctx = Context{
-		NumberPool:      nil,
+		NumberPool:      number_pool.NewNumberPool(config.GetConfig().GetConnNum(), 1),
 		FromSafrpServer: make([]chan common.DataPackage, config.GetConfig().PipeNum+1),
 		ToSafrpServer:   make([]chan common.DataPackage, config.GetConfig().PipeNum+1),
 		FromProxyServer: make(chan common.DataPackage, 3000),

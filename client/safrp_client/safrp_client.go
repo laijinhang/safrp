@@ -69,8 +69,9 @@ func (this *safrpClient) getSafrpServerAddress() string {
 }
 
 func (this *safrpClient) connectSafrpServer(id uint64) {
-	this.ctx.Conn[id].Read([]byte(this.config.Password)) // 发送连接密码
+	this.ctx.Conn[id].Write([]byte(this.config.Password)) // 发送连接密码
 	buf := make([]byte, 1)
+	this.log.Printf("编号：%d，开始连接。。。\n", id)
 	this.ctx.Conn[id].Read(buf) // 读取连接结果
 	if buf[0] == '0' {
 		panic("密码错误。。。")

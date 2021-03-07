@@ -3,12 +3,13 @@ package config
 import (
 	"gopkg.in/ini.v1"
 	"safrp/client/log"
+	"safrp/common"
 )
 
 type Config struct {
 	SafrpServerIP   string
 	SafrpServerPort string
-	ConnNum int
+	ConnNum uint64
 	Password   string
 	HTTPIP     string
 	HTTPPort   string
@@ -18,6 +19,10 @@ type Config struct {
 
 func (this *Config)GetPipeNum() int {
 	return this.PipeNum
+}
+
+func (this *Config)GetConnNum() uint64 {
+	return this.ConnNum
 }
 
 func init() {
@@ -50,13 +55,13 @@ func loadConfig() {
 	proxyIni := cfg.Section("proxy")
 	conf.HTTPIP = proxyIni.Key("ip").String()
 	conf.HTTPPort = proxyIni.Key("port").String()
-	conf.Protocol = proxyIni.Key("protocol").String()
+	conf.Protocol = common.GetL3Protocol(proxyIni.Key("protocol").String())
 
-	conf.ConnNum = func(v int, e error) int {
+	conf.ConnNum = func(v int, e error) uint64 {
 		if e != nil {
 			panic(e)
 		}
-		return v
+		return uint64(v)
 	}(cfg.Section("proxy").Key("conn_num").Int())
 	conf.PipeNum = func(v int, e error) int {
 		if e != nil {

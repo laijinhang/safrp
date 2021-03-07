@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"github.com/sirupsen/logrus"
 	"os"
 	"os/signal"
 	"safrp/client/proxy_client"
@@ -30,8 +30,8 @@ func Exit() {
 	//监听所有信号
 	signal.Notify(c)
 	//阻塞直到有信号传入
-	fmt.Println("启动")
-	s := <-c
-	fmt.Println("退出", s)
+	logrus.Println("启动")
+	<-c
+	logrus.Println("退出")
 	os.Exit(1)
 }

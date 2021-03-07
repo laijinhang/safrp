@@ -9,6 +9,7 @@ func GetLog() *logrus.Logger {
 }
 
 func init() {
+	log = *logrus.New()
 	log.SetLevel(logrus.TraceLevel)
 	log.SetFormatter(&logrus.TextFormatter{
 		ForceColors:            true,
@@ -17,5 +18,6 @@ func init() {
 		DisableLevelTruncation: true,
 	})
 	log.SetReportCaller(true)
-	log.SetLevel(logrus.PanicLevel)
+	log.Println(123)
+	//log.SetLevel(logrus.PanicLevel)
 }
