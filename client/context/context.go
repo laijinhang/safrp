@@ -17,6 +17,7 @@ type Context struct {
 	ToClient []chan common.DataPackage
 	ReadConn []*func()
 	Conn     []net.Conn
+	Proxy    []net.Conn
 }
 
 var ctx Context
@@ -31,8 +32,9 @@ func init() {
 		ToClient:        make([]chan common.DataPackage, config.GetConfig().PipeNum+1),
 		ReadConn:        make([]*func(), 3000),
 		Conn:            make([]net.Conn, config.GetConfig().PipeNum+1),
+		Proxy:           make([]net.Conn, config.GetConfig().ConnNum+1),
 	}
-	for i := 0;i < config.GetConfig().PipeNum;i++ {
+	for i := 0; i < config.GetConfig().PipeNum; i++ {
 		ctx.FromSafrpServer[i] = make(chan common.DataPackage, 10)
 		ctx.ToClient[i] = make(chan common.DataPackage, 10)
 		ctx.ToSafrpServer[i] = make(chan common.DataPackage, 10)

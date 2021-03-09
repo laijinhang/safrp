@@ -1,11 +1,14 @@
 package safrp_client
 
 import (
+	"bytes"
 	"github.com/sirupsen/logrus"
 	"net"
 	"safrp/client/config"
 	"safrp/client/context"
 	"safrp/client/log"
+	"safrp/common"
+	"strconv"
 	"time"
 )
 
@@ -93,4 +96,14 @@ func (this *safrpClient) setCtxConn(conn net.Conn, id uint64) {
 
 func (this *safrpClient) getCtxConn(id uint64) net.Conn {
 	return this.ctx.Conn[id]
+}
+
+func (this *safrpClient) parese(data []byte) *common.DataPackage {
+	var pack common.DataPackage
+	ds := bytes.SplitN(data, []byte("\r\n"), 2)
+	dsVal := bytes.Split(ds[0], []byte{' '})
+	pack.Number, _ = strconv.Atoi(string(dsVal[0]))
+	pack.Status = string(dsVal[2])
+	pack.Data = ds[1][:len(ds[1])-7]
+	return &pack
 }
