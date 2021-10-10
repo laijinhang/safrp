@@ -1,22 +1,17 @@
 package main
 
 import (
-	"fmt"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/ini.v1"
-	"io"
 	"log"
 	"net"
 	"safrp/common"
-	"strings"
-	"sync"
-	"time"
 )
 
 type Config struct {
 	ServerIP   string
 	ServerPort string
-	ConnNum int
+	ClientPort string
 	Password   string
 	HTTPIP     string
 	HTTPPort   string
@@ -24,24 +19,7 @@ type Config struct {
 	PipeNum    int
 }
 
-type Context struct {
-	FromSafrpServer []chan common.DataPackage
-	ToSafrpServer   []chan common.DataPackage
-	FromProxyServer chan common.DataPackage
-	ToProxyServer   chan common.DataPackage
-
-	ToClient []chan common.DataPackage
-	ReadConn []*func()
-	Conn []*net.Conn
-}
-
 var conf Config
-var BufSize = 1024 * 8
-var TCPDataEnd = []byte{'<', 'e', '>'}
-
-var BufPool = sync.Pool{New: func() interface{} {
-	return make([]byte, 1024*8)
-}}
 
 /**
  * 加载safrp服务端配置文件
@@ -56,27 +34,14 @@ func loadConfig() {
 	}
 	serverIni := cfg.Section("server")
 	conf.ServerIP = serverIni.Key("ip").String()
-	conf.ServerPort = serverIni.Key("port").String()
+	conf.ServerPort = serverIni.Key("serverPort").String()
 	conf.Password = serverIni.Key("password").String()
-	conf.ServerPort = serverIni.Key("port").String()
+	conf.ClientPort = serverIni.Key("clientPort").String()
 
 	proxyIni := cfg.Section("proxy")
 	conf.HTTPIP = proxyIni.Key("ip").String()
 	conf.HTTPPort = proxyIni.Key("port").String()
 	conf.Protocol = proxyIni.Key("protocol").String()
-
-	conf.ConnNum = func(v int, e error) int {
-		if e != nil {
-			panic(e)
-		}
-		return v
-	}(cfg.Section("proxy").Key("conn_num").Int())
-	conf.PipeNum = func(v int, e error) int {
-		if e != nil {
-			panic(e)
-		}
-		return v
-	}(cfg.Section("").Key("pipe_num").Int())
 
 	logrus.SetLevel(logrus.TraceLevel)
 	logrus.SetFormatter(&logrus.TextFormatter{
@@ -90,8 +55,8 @@ func loadConfig() {
 	logrus.Infoln("load safrp.ini ...")
 	logrus.Infoln("server-ip:", conf.ServerIP)
 	logrus.Infoln("server-port:", conf.ServerPort)
+	logrus.Infoln("client-port:", conf.ClientPort)
 	logrus.Infoln("server-password:", conf.Password)
-	logrus.Infoln("conn_num:", conf.ConnNum)
 	logrus.Infoln("http-ip:", conf.HTTPIP)
 	logrus.Infoln("http-port:", conf.HTTPPort)
 	logrus.Infoln()
@@ -110,245 +75,49 @@ func main() {
 			TimestampFormat:        "2006-01-02 15:04:05",
 			DisableLevelTruncation: true,
 		})
-		//log.SetReportCaller(true)
+		log.SetReportCaller(true)
 
-		ctx := common.Context{
-			Conf:       conf,
-			Conn:       make([]net.Conn, conf.PipeNum+1),
-			NumberPool: common.NewNumberPool(uint64(conf.PipeNum), uint64(1)),
-			IP:         conf.ServerIP,
-			Port:       conf.ServerPort,
-			Log:        log,
-			Protocol:   common.GetL3Protocol(conf.Protocol),
-			Expand:Context{
-                FromSafrpServer: make([]chan common.DataPackage, conf.PipeNum+1),
-                ToSafrpServer:   make([]chan common.DataPackage, conf.PipeNum+1),
-                FromProxyServer: make(chan common.DataPackage, 3000),
-                ToProxyServer:   make(chan common.DataPackage, 3000),
-                ToClient: make([]chan common.DataPackage, conf.PipeNum+1),
-                Conn: make([]*net.Conn, conf.PipeNum+1),
-                ReadConn: make([]*func(), 3000),
-            },
-		}
-		for i := 0;i <= ctx.Conf.(Config).PipeNum;i++ {
-			ctx.Expand.(Context).FromSafrpServer[i] = make(chan common.DataPackage, 10)
-			ctx.Expand.(Context).ToClient[i] = make(chan common.DataPackage, 10)
-			ctx.Expand.(Context).ToSafrpServer[i] = make(chan common.DataPackage, 10)
-		}
-
-		go common.Run(func() {
-			// 对safrp客户端
-			SafrpClient(&ctx)
-		})
-		common.Run(func() {
-		  // 代理服务
-			ProxyClient(&ctx)
-		})
+		HandleSafrp()
 	})
 }
 
-// 单例模式
-var Server = common.NewSingle()
-var safrpClient = common.NewSingle()
+func GetConn(ip, port string) net.Conn {
+	c, err := net.Dial("tcp", ip+":"+port)
+	if err != nil {
+		panic(err)
+	}
+	return c
+}
 
-func SafrpClient(ctx *common.Context) {
-	connManage := make(chan int, ctx.Conf.(Config).PipeNum)
-	for {
-		connManage <- 1 // 没有达到最大隧道数
-		// 创建一个连接
-		conn, err := net.Dial(ctx.Protocol, ctx.IP+":"+ctx.Port)
+func HandleSafrp() {
+	conn := make(chan string, 1024)
+	go func() {
+		c, err := net.Dial("tcp", conf.ServerIP + ":" + conf.ServerPort)
 		if err != nil {
-			ctx.Log.Errorln(err)
-			time.Sleep(3 * time.Second)
-			<-connManage
-			continue
+			panic(err)
 		}
-		id, _ := ctx.NumberPool.Get()
-		ctx.Conn.([]net.Conn)[id] = conn
-		// 管道取数据
-		go func(id uint64) {
-			defer func() {
-				for p := recover(); p != nil; p = recover() {
-					ctx.Log.Println(p)
-				}
-				ctx.Conn.([]net.Conn)[id].Close() // 关闭连接
-				ctx.NumberPool.Put(int(id))
-				<-connManage // 当前管道减一
-			}()
-			ctx.Conn.([]net.Conn)[id].Write([]byte(ctx.Conf.(Config).Password)) // 发送密码
-			buf := make([]byte, 1)
-			ctx.Conn.([]net.Conn)[id].Read(buf) // 读取连接结果
-			if buf[0] == '0' {
-				ctx.Log.Println("密码错误。。。")
-				return
+		buf := make([]byte, 1024)
+		for {
+			n, err := c.Read(buf)
+			if err != nil {
+				panic(err)
 			}
-			ctx.Log.Println(fmt.Sprintf("编号：%d，连接成功。。。\n", id))
-			connClose := make(chan bool)
-			FromStream := make(chan []byte, 10)
-			// 数据转发中心
-			go common.DataProcessingCenter(FromStream,
-				ctx.Expand.(Context).ToProxyServer,
-				[]byte("<<end>>"),
-				connClose)
-			go func() {
-				for {
-					select {
-					case pack := <-ctx.Expand.(Context).ToProxyServer:
-						//ctx.Log.Infoln(fmt.Sprintf("编号：%d, Data：%s\n", pack.Number, string(pack.Data)))
-						ctx.Expand.(Context).ToClient[pack.Number%ctx.Conf.(Config).PipeNum] <- pack
-					}
-				}
-			}()
-			// 取数据
-			go func() {
-				buf := BufPool.Get().([]byte)
-				defer func() {
-					BufPool.Put(buf)
-					connClose <- true
-				}()
-				for {
-					select {
-					case <-connClose:
-						return
-					default:
-						// 一直读，直到连接关闭
-						err := ctx.Conn.([]net.Conn)[id].SetReadDeadline(time.Now().Add(1 * time.Second))
-						if err != nil {
-							return
-						}
-						n, err := ctx.Conn.([]net.Conn)[id].Read(buf)
-						if err != nil {
-							if neterr, ok := err.(net.Error); (ok && neterr.Timeout()) || err == io.EOF {
-								continue
-							}
-							return
-						}
-						FromStream <- buf[:n]
-					}
-				}
-			}()
-			//
-			sendHeartbeat := make(chan bool, 1)
-			nextSendDataTime := time.Now().Unix()
-			for {
-				select {
-				case <-sendHeartbeat:
-					err := ctx.Conn.([]net.Conn)[id].SetWriteDeadline(time.Now().Add(time.Second))
+			conn <- string(buf[:n])
+		}
+	}()
+	go func() {
+		for {
+			select {
+			case c := <-conn:
+				go func(s string) {
+					c1, err := net.Dial("tcp", conf.ServerIP + ":" + conf.ClientPort)
 					if err != nil {
-						return
+						panic(err)
 					}
-					_, err = ctx.Conn.([]net.Conn)[id].Write([]byte("<<end>>"))
-					if err != nil {
-						if neterr, ok := err.(net.Error); (ok && neterr.Timeout()) || err == io.EOF {
-							continue
-						}
-						return
-					}
-					nextSendDataTime = time.Now().Unix()
-				case pack := <-ctx.Expand.(Context).ToSafrpServer[id]: // 发送数据
-					err := ctx.Conn.([]net.Conn)[id].SetWriteDeadline(time.Now().Add(time.Second))
-					if err != nil {
-						return
-					}
-					_, err = ctx.Conn.([]net.Conn)[id].Write([]byte(fmt.Sprintf("%d %s %s\r\n%s%s",  pack.Number, "1", pack.Status, string(pack.Data), "<<end>>")))
-					if err != nil {
-						if neterr, ok := err.(net.Error); (ok && neterr.Timeout()) || err == io.EOF {
-							continue
-						}
-						return
-					}
-				default:
-					if time.Now().Unix()-nextSendDataTime >= 60 {
-						sendHeartbeat <- true
-					}
-					time.Sleep(time.Second)
-				}
+					c2 := GetConn(conf.HTTPIP, conf.HTTPPort)
+					common.HandleConn(c1, c2)
+				}(c)
 			}
-			// 数据解析
-			select {}
-		}(id)
-	}
-	select {}
-}
-
-func ProxyClient(ctx *common.Context) {
-	wg := sync.WaitGroup{}
-	for i := 0;i < ctx.Conf.(Config).PipeNum;i++ {
-		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
-			defer func() {
-				for p := recover(); p != nil; p = recover() {
-					logrus.Println("panic:", p)
-				}
-			}()
-
-			for {
-				select {
-				case data := <-ctx.Expand.(Context).ToClient[id]:
-					if strings.Index(data.Status, "close") != -1 {
-						ctx.Expand.(Context).ReadConn[data.Number] = nil
-						ctx.Log.Infoln("编号：", data.Number, "连接关闭")
-						ctx.Expand.(Context).Conn[id] = nil
-						continue
-					}
-					if ctx.Expand.(Context).Conn[id] == nil {
-						conn, err := net.Dial("tcp", ctx.Conf.(Config).HTTPIP+":"+ctx.Conf.(Config).HTTPPort)
-						if err != nil {
-							ctx.Log.Errorln(err)
-							break
-						}
-						ctx.Expand.(Context).Conn[id] = &conn
-					}
-					n, err := (*ctx.Expand.(Context).Conn[id]).Write(data.Data)
-					if err != nil {
-						ctx.Log.Errorln(err)
-						break
-					}
-					if n != len(data.Data) {
-						ctx.Log.Errorln(n, "!=", len(data.Data))
-					}
-					ctx.Log.Infoln(ctx.Expand.(Context).ReadConn[data.Number] == nil)
-					if ctx.Expand.(Context).ReadConn[data.Number] == nil {
-						f1 := func() {
-							ctx.Log.Printf("编号：%d启动读。。。\n", data.Number)
-							defer ctx.Log.Printf("编号：%d结束读。。。\n", data.Number)
-							buf := BufPool.Get().([]byte)
-							defer BufPool.Put(buf)
-							for {
-								if ctx.Expand.(Context).ReadConn[data.Number] == nil {
-									return
-								}
-								if ctx.Expand.(Context).Conn[id] == nil {
-									ctx.Log.Println(ctx.Expand.(Context).Conn[id])
-									return
-								}
-								n, err := (*ctx.Expand.(Context).Conn[id]).Read(buf)
-								if err != nil {
-									ctx.Log.Errorln(err)
-									break
-								}
-								ctx.Expand.(Context).ToSafrpServer[id] <- common.DataPackage{
-									Number: data.Number,
-									Status: "open",
-									Data:   buf[:n],
-								}
-							}
-						}
-						ctx.Expand.(Context).ReadConn[data.Number] = &f1
-						ctx.Log.Infoln((*(ctx.Expand.(Context).ReadConn[data.Number])))
-						go (*(ctx.Expand.(Context).ReadConn[data.Number]))()
-					}
-				}
-			}
-		}(i)
-	}
-	wg.Wait()
-}
-
-// 通过密码登录插件
-func sendConnectPassword(ctx *common.Context) {
-	for i := 0; i < len(ctx.Conn.([]net.Conn)); i++ {
-		ctx.Conn.([]net.Conn)[i].Read([]byte(ctx.Conf.(Config).Password)) // 发送连接密码
-	}
+		}
+	}()
 }

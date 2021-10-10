@@ -1,107 +1,52 @@
 package common
 
+import (
+	"github.com/sirupsen/logrus"
+	"net"
+)
+
 type Server interface {
-	ReadServer(ctx *Context, funs []func(ctx *Context))
-	SendServer(ctx *Context, funs []func(ctx *Context))
-	Server(ctx *Context, funs []func(ctx *Context))
-	Protocol() string
+	Run()
+	GetConn() chan net.Conn
 }
 
-type TCPServer struct {
-	IP string
-	Port string
+type TcpServer struct {
+	ip string
+	port string
+	conns chan net.Conn
 }
 
-func (this *TCPServer) ReadServer(ctx *Context, funs []func(ctx *Context)) {
-	ctx.IP = this.IP
-	ctx.Port = this.Port
-	for i := 0;i < len(funs);i++ {
-		funs[i](ctx)
+func NewTcpServer(ip, port string, connNum int) Server {
+	return &TcpServer{
+		ip:    ip,
+		port:  port,
+		conns: make(chan net.Conn, connNum),
 	}
 }
 
-func (this *TCPServer) SendServer(ctx *Context, funs []func(ctx *Context)) {
-	ctx.IP = this.IP
-	ctx.Port = this.Port
-	for i := 0;i < len(funs);i++ {
-		funs[i](ctx)
+func (this *TcpServer) Run() {
+	s, err := net.Listen("tcp", this.ip + ":" + this.port)
+	if err != nil {
+		panic(err)
+	}
+	for {
+		c, err := s.Accept()
+		if err != nil {
+			logrus.Println(err)
+			continue
+		}
+		this.conns <- c
 	}
 }
 
-func (this *TCPServer) Server(ctx *Context, funs []func(ctx *Context)) {
-	ctx.IP = this.IP
-	ctx.Port = this.Port
-	for i := 0;i < len(funs);i++ {
-		funs[i](ctx)
+func (this *TcpServer) GetConn() chan net.Conn {
+	if this.conns == nil {
+		return nil
 	}
+	return this.conns
 }
 
-func (t *TCPServer) Protocol() string {
-	return "tcp"
-}
-
-type UDPServer struct {
-	IP string
-	Port string
-}
-
-func (this *UDPServer) ReadServer(ctx *Context, funs []func(ctx *Context)) {
-	ctx.IP = this.IP
-	ctx.Port = this.Port
-	for i := 0;i < len(funs);i++ {
-		funs[i](ctx)
-	}
-}
-
-func (this *UDPServer) SendServer(ctx *Context, funs []func(ctx *Context)) {
-	ctx.IP = this.IP
-	ctx.Port = this.Port
-	for i := 0;i < len(funs);i++ {
-		funs[i](ctx)
-	}
-}
-
-func (this *UDPServer) Server(ctx *Context, funs []func(ctx *Context)) {
-	ctx.IP = this.IP
-	ctx.Port = this.Port
-	for i := 0;i < len(funs);i++ {
-		funs[i](ctx)
-	}
-}
-
-func (this *UDPServer) Protocol() string {
-	return "udp"
-}
-
-type HTTPServer struct {
-	IP string
-	Port string
-}
-
-func (this *HTTPServer) ReadServer(ctx *Context, funs []func(ctx *Context)) {
-	ctx.IP = this.IP
-	ctx.Port = this.Port
-	for i := 0;i < len(funs);i++ {
-		funs[i](ctx)
-	}
-}
-
-func (this *HTTPServer) SendServer(ctx *Context, funs []func(ctx *Context)) {
-	ctx.IP = this.IP
-	ctx.Port = this.Port
-	for i := 0;i < len(funs);i++ {
-		funs[i](ctx)
-	}
-}
-
-func (this *HTTPServer) Server(ctx *Context, funs []func(ctx *Context)) {
-	ctx.IP = this.IP
-	ctx.Port = this.Port
-	for i := 0;i < len(funs);i++ {
-		funs[i](ctx)
-	}
-}
-
-func (this *HTTPServer) Protocol() string {
-	return "http"
+type Conn struct {
+	SafrpClient net.Conn
+	UserClient net.Conn
 }
